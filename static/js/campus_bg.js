@@ -269,23 +269,37 @@
 
   function hopOffset(p) { return p.hop > 0 ? Math.round(Math.sin((1 - p.hop / 0.45) * Math.PI) * 4 * p.scale) : 0; }
 
-  function drawPerson(p, frame) {
-    var front = p.state === "fourth" && p.facing;
-    var rows = front ? frontRows(p) : rowsFor(p, frame);
-    var c = p.colors, s = p.scale, x0 = Math.round(p.x), y0 = p.y - rows.length * s - hopOffset(p);
+  // Each pose (walk frames, standing, waving, facing the viewer; left or right) is drawn pixel by pixel
+  // once into a tiny canvas and then copied with one drawImage per frame: far cheaper than ~80 fillRects.
+  function sprite(p, rows, front) {
+    var up = p.wave > 0 && Math.floor(p.wave * 6) % 2 === 0;
+    var key = rows.length + (front ? "f" : p.dir > 0 ? "r" : "l") + rows[rows.length - 1] + rows[rows.length - 3] + (up ? "w" : "");
+    var cache = p.sprites || (p.sprites = {});
+    if (cache[key]) return cache[key];
+    var s = p.scale, c = p.colors, img = document.createElement("canvas");
+    img.width = 8 * s; img.height = rows.length * s;
+    var g = img.getContext("2d");
     c.M = "#b0554a";
-    ctx.globalAlpha = p.alpha * FADE;
-    ctx.fillStyle = "rgba(31, 45, 122, .18)";          // soft shadow on the ground
-    ctx.fillRect(x0 + s, p.y, 6 * s, s);
     for (var r = 0; r < rows.length; r++) {
       var row = rows[r];
       for (var i = 0; i < 8; i++) {
         var ch = row.charAt(p.dir > 0 || front ? i : 7 - i);
         if (ch === "." || (ch === "B" && !p.hasBag)) continue;
-        ctx.fillStyle = ch === "A" ? c.T : c[ch];
-        ctx.fillRect(x0 + i * s, y0 + r * s, s, s);
+        g.fillStyle = ch === "A" ? c.T : c[ch];
+        g.fillRect(i * s, r * s, s, s);
       }
     }
+    return (cache[key] = img);
+  }
+
+  function drawPerson(p, frame) {
+    var front = p.state === "fourth" && p.facing;
+    var rows = front ? frontRows(p) : rowsFor(p, frame);
+    var s = p.scale, x0 = Math.round(p.x), y0 = p.y - rows.length * s - hopOffset(p);
+    ctx.globalAlpha = p.alpha * FADE;
+    ctx.fillStyle = "rgba(31, 45, 122, .18)";          // soft shadow on the ground
+    ctx.fillRect(x0 + s, p.y, 6 * s, s);
+    ctx.drawImage(sprite(p, rows, front), x0, y0);
     if (front) {                                        // eyes follow the mouse
       var look = mouse.x < 0 ? 0 : Math.max(-1, Math.min(1, Math.round((mouse.x - (x0 + 4 * s)) / 120)));
       ctx.fillStyle = "#1a1a1a";
@@ -299,7 +313,8 @@
   function drawText(p, x0, y0) {
     var s = p.scale, size = 6 + 2 * s;
     ctx.font = "700 " + size + "px Inter, Arial, sans-serif";
-    var tw = Math.ceil(ctx.measureText(p.text).width), pad = 6;
+    if (p.textW == null || p.textFor !== p.text) { p.textW = Math.ceil(ctx.measureText(p.text).width); p.textFor = p.text; }
+    var tw = p.textW, pad = 6;
     var bw = tw + pad * 2, bh = size + pad * 2;
     var bx = Math.round(Math.max(4, Math.min(W - bw - 4, x0 + 4 * s - bw / 2))), by = y0 - bh - 8;
     ctx.globalAlpha = p.scale >= 3 ? 0.95 : 0.8;        // words stay readable
@@ -435,18 +450,25 @@
     poke(e.clientX, e.clientY);
   });
 
-  var last = 0;
+  var last = 0, meetClock = 0, needSort = true;
+  var FRAME = 1000 / 30;   // pixel art doesn't need 60 frames a second; half the work
   function tick(now) {
-    var dt = last ? Math.min(0.05, (now - last) / 1000) : 0;
+    if (!still) requestAnimationFrame(tick);
+    if (last && now - last < FRAME - 1) return;
+    var dt = last ? Math.min(0.08, (now - last) / 1000) : 0;
     last = now;
     ctx.clearRect(0, 0, W, H);
 
-    for (var a = 0; a < people.length; a++) {
-      for (var b = a + 1; b < people.length; b++) meet(people[a], people[b]);
+    meetClock -= dt;
+    if (meetClock <= 0) {                               // who's meeting whom: 5 times a second is plenty
+      meetClock = 0.2;
+      for (var a = 0; a < people.length; a++) {
+        for (var b = a + 1; b < people.length; b++) meet(people[a], people[b]);
+      }
     }
     nextFourth -= dt;
     if (nextFourth <= 0) { breakFourthWall(); nextFourth = 25 + Math.random() * 25; }
-    people.sort(function (p, q) { return p.y - q.y; });   // farther ones behind nearer ones
+    if (needSort) { people.sort(function (p, q) { return p.y - q.y; }); needSort = false; }   // farther ones behind
     for (var i = 0; i < people.length; i++) {
       var p = people[i], frame = update(p, dt), w = 8 * p.scale;
       if ((p.x > W + w * 2 && p.dir > 0) || (p.x < -w * 3 && p.dir < 0)) {
@@ -454,14 +476,14 @@
         if (p.friend) p.friend.friend = null;
         people[i] = p = newPerson({});
         if (Math.random() < 0.15 && people.length < 60) people.push(friendOf(p));
+        needSort = true;
       }
       drawPerson(p, frame);
     }
     ctx.globalAlpha = 1;
-    if (!still) requestAnimationFrame(tick);
   }
 
   resize();
-  window.addEventListener("resize", function () { resize(); if (still) tick(0); });
+  window.addEventListener("resize", function () { resize(); needSort = true; last = 0; if (still) tick(0); });
   requestAnimationFrame(tick);
 })();
