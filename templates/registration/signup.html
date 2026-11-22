@@ -2,6 +2,7 @@
 {% load static %}
 {% block title %}Sign up · Quik RE-ID{% endblock %}
 {% block content %}
+<canvas class="campus-bg" data-campus aria-hidden="true"></canvas>
 <div class="signup-layout">
   <section class="dll-card">
     <header class="id-head">
@@ -62,4 +63,4 @@
 </div>
 {% include "requests_app/includes/confirm_modal.html" with id="signup-confirm" form_id="signup-form" title="Create your account?" body="Your student ID becomes your username. Check that it's correct." verb="Create account" %}
 {% endblock %}
-{% block scripts %}<script src="{% static 'js/signup_preview.js' %}"></script><script src="{% static 'js/lanyard.js' %}"></script>{% endblock %}
+{% block scripts %}<script src="{% static 'js/signup_preview.js' %}"></script><script src="{% static 'js/lanyard.js' %}"></script><script src="{% static 'js/campus_bg.js' %}"></script>{% endblock %}

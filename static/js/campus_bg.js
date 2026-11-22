@@ -446,7 +446,7 @@
 
   window.addEventListener("mousemove", function (e) { mouse.x = e.clientX; mouse.y = e.clientY; });
   document.addEventListener("click", function (e) {
-    if (e.target.closest && e.target.closest("[data-lanyard-card], a, button, input, label, select, textarea, header")) return;
+    if (e.target.closest && e.target.closest("[data-lanyard-card], .dll-card, .id-preview, a, button, input, label, select, textarea, header")) return;
     poke(e.clientX, e.clientY);
   });
 
