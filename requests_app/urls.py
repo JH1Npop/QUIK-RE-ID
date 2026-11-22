@@ -8,6 +8,12 @@ urlpatterns = [
     path("files/<int:pk>/", views.upload_file, name="upload_file"),
     path("requests/<int:pk>/authorization/", views.authorization, name="authorization"),
 
+    # Passwords
+    path("account/password/", views.password_change, name="password_change"),
+    path("password-reset/", views.ForgotPasswordView.as_view(), name="password_reset"),
+    path("password-reset/sent/", views.ForgotPasswordSentView.as_view(), name="password_reset_sent"),
+    path("password-reset/<uidb64>/<token>/", views.NewPasswordView.as_view(), name="password_reset_confirm"),
+
     # Student
     path("my/requests/", student_views.student_list, name="student_list"),
     path("my/requests/new/", student_views.student_new, name="student_new"),

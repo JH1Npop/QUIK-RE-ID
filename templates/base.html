@@ -54,6 +54,7 @@
             <div class="name" data-testid="current-user">{{ user.display_name }}</div>
             {% if user_role %}<div class="role">{{ user_role }}</div>{% endif %}
           </div>
+          <a href="{% url 'password_change' %}" class="btn btn-quiet btn-sm{% if request.resolver_match.url_name == 'password_change' %} active{% endif %}">Change password</a>
           <form method="post" action="{% url 'logout' %}">
             {% csrf_token %}
             <button type="submit" class="btn btn-quiet btn-sm">Log out</button>

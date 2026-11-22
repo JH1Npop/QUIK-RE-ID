@@ -1131,3 +1131,61 @@ class SecurityTests(PortalTestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertNotIn("Content-Security-Policy", resp.headers)
         self.assertEqual(resp["X-Content-Type-Options"], "nosniff")
+
+
+class PasswordTests(PortalTestCase):
+    def test_user_changes_their_own_password(self):
+        self.login(self.osas)
+        url = reverse("password_change")
+        self.assertContains(self.client.get(url), "Change your password?")
+        resp = self.client.post(url, {"old_password": "wrong", "new_password1": "New-pass-4471",
+                                      "new_password2": "New-pass-4471"})
+        self.assertContains(resp, "That isn&#x27;t your current password.")
+        resp = self.client.post(url, {"old_password": PASSWORD, "new_password1": "New-pass-4471",
+                                      "new_password2": "New-pass-4471"})
+        self.assertIn("Password changed", self.messages_of(resp))
+        self.assertEqual(self.client.get(reverse("osas_queue")).status_code, 200)  # still logged in here
+        self.osas.refresh_from_db()
+        self.assertTrue(self.osas.check_password("New-pass-4471"))
+        self.client.logout()
+        self.assertRedirects(self.client.get(url), reverse("login") + "?next=" + url)
+
+    def test_forgot_password_by_student_id_or_email(self):
+        mail.outbox.clear()
+        for value in (self.student.username.upper(), self.student.email.upper()):
+            resp = self.client.post(reverse("password_reset"), {"email": value})
+            self.assertRedirects(resp, reverse("password_reset_sent"))
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(mail.outbox[0].to, [self.student.email])
+        self.assertEqual(mail.outbox[0].subject, "Reset your Quik RE-ID password")
+        # Nobody by that name: same page, no email (doesn't reveal who has an account).
+        resp = self.client.post(reverse("password_reset"), {"email": "nobody-here"})
+        self.assertRedirects(resp, reverse("password_reset_sent"))
+        self.assertEqual(len(mail.outbox), 2)
+        # The link sets a new password once, then stops working.
+        link = re.search(r"https?://[^/]+(/password-reset/\S+/)", mail.outbox[0].body).group(1)
+        page = self.client.get(link, follow=True)
+        self.assertContains(page, "Set a new password")
+        resp = self.client.post(page.redirect_chain[-1][0], {"new_password1": "Fresh-pass-8832",
+                                                             "new_password2": "Fresh-pass-8832"})
+        self.assertRedirects(resp, reverse("login"))
+        self.student.refresh_from_db()
+        self.assertTrue(self.student.check_password("Fresh-pass-8832"))
+        self.assertContains(self.client.get(link, follow=True), "This link no longer works")
+
+    def test_reset_emails_are_limited_and_end_a_login_pause(self):
+        mail.outbox.clear()
+        for _ in range(5):
+            self.client.post(reverse("password_reset"), {"email": self.ph.username})
+        self.assertEqual(len(mail.outbox), 3)   # at most 3 an hour per account
+        for _ in range(5):
+            self.client.post(reverse("login"), {"username": self.ph.username, "password": "wrong"})
+        link = re.search(r"https?://[^/]+(/password-reset/\S+/)", mail.outbox[0].body).group(1)
+        page = self.client.get(link, follow=True)
+        self.client.post(page.redirect_chain[-1][0], {"new_password1": "Fresh-pass-8832",
+                                                      "new_password2": "Fresh-pass-8832"})
+        resp = self.client.post(reverse("login"), {"username": self.ph.username, "password": "Fresh-pass-8832"})
+        self.assertEqual(resp.status_code, 302)   # the new password works right away
+
+    def test_login_page_links_to_forgot_password(self):
+        self.assertContains(self.client.get(reverse("login")), reverse("password_reset"))

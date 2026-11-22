@@ -65,6 +65,7 @@ a { color: var(--primary); }
 .user-chip .name { font-weight: 600; font-size: .9rem; }
 .user-chip .role { font-size: .78rem; color: var(--muted); }
 .user-chip form { margin: 0; }
+.forgot-link { display: inline-block; margin-top: .35rem; font-size: .82rem; font-weight: 500; color: var(--dll-navy); }
 .nav-toggle { display: none; margin-left: auto; background: none; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .4rem .6rem; font: inherit; color: var(--text); }
 
 @media (max-width: 860px) {
@@ -342,8 +343,11 @@ a { color: var(--primary); }
 .page:has(.login-stage) { padding-bottom: 0; }
 /* Dragging the card must not resize or scroll the page (no scrollbars popping in, no navbar wiggle). */
 html:has(.login-stage) { overflow-x: hidden; }
-.page:has(.login-stage) { overflow-y: clip; }   /* a card dragged below the page doesn't make it taller */
+/* Short windows only (taller ones are locked above): a card dragged below the page doesn't make it taller.
+   The margin leaves room for the card's shadow. */
+html:not(.login-locked) .page:has(.login-stage) { overflow-y: clip; overflow-clip-margin: 48px; }
 html.login-locked, html.login-locked body { overflow: hidden; overscroll-behavior: none; }
+html.login-locked body { min-height: 100vh; min-height: 100dvh; }   /* clip at the screen edge, not just under the card (its shadow) */
 body:has(.login-stage), body:has(.mini-id.grabbing) { user-select: none; -webkit-user-select: none; }   /* no text highlighting while dragging */
 body:has(.login-stage) input { user-select: text; -webkit-user-select: text; }
 .id-logo { position: relative; width: 64px; height: 64px; flex-shrink: 0; }

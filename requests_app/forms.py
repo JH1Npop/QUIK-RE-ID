@@ -5,7 +5,9 @@ from urllib.parse import urlparse
 from decimal import Decimal
 
 from django import forms
-from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
+from django.contrib.auth.forms import (
+    AuthenticationForm, PasswordChangeForm, PasswordResetForm, SetPasswordForm, UserCreationForm,
+)
 from django.contrib.auth.models import Group
 from django.core.cache import cache
 from django.core.validators import RegexValidator
@@ -514,3 +516,69 @@ class BranchLocationForm(BootstrapMixin, forms.ModelForm):
         if commit:
             shop.save()
         return shop
+
+
+# ---------------------------------------------------------------- passwords
+
+PASSWORD_HELP = "At least 8 characters. Not only numbers, and not a common password."
+RESET_EMAILS_PER_HOUR = 3   # reset emails one account can be sent in an hour (stops inbox flooding)
+
+
+class _NewPasswordFields:
+    """Plain labels for the two new-password fields, and a fresh start for the wrong-password count."""
+
+    def _label_new_password(self):
+        self.fields["new_password1"].label = "New password"
+        self.fields["new_password1"].help_text = PASSWORD_HELP
+        self.fields["new_password2"].label = "Confirm new password"
+        self.fields["new_password2"].help_text = ""
+
+    def save(self, commit=True):
+        user = super().save(commit)
+        cache.delete(LoginForm._fail_key(user.username))   # a new password ends any login pause
+        return user
+
+
+class ChangePasswordForm(_NewPasswordFields, BootstrapMixin, PasswordChangeForm):
+    """A logged-in user changes their own password (needs the current one)."""
+    error_messages = {**PasswordChangeForm.error_messages,
+                      "password_incorrect": "That isn't your current password."}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["old_password"].label = "Current password"
+        self._label_new_password()
+
+
+class NewPasswordForm(_NewPasswordFields, BootstrapMixin, SetPasswordForm):
+    """The page a reset link opens: set a new password."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._label_new_password()
+
+
+class ForgotPasswordForm(BootstrapMixin, PasswordResetForm):
+    """Forgot password: the student ID (username) or the email address, sent to the account's own email.
+
+    The page says the same thing whether or not an account matched, so it doesn't reveal who has one."""
+    email = forms.CharField(label="Student ID or email", max_length=254,
+                            widget=forms.TextInput(attrs={"autocomplete": "username"}))
+
+    def get_users(self, value):
+        value = value.strip()
+        if not value:
+            return
+        matches = User.objects.filter(Q(username__iexact=value) | Q(email__iexact=value), is_active=True)
+        for user in matches:
+            if not (user.email and user.has_usable_password()):
+                continue
+            key = f"pw-reset:{user.pk}"
+            cache.add(key, 0, 60 * 60)
+            if cache.get(key, 0) >= RESET_EMAILS_PER_HOUR:
+                continue
+            try:
+                cache.incr(key)
+            except ValueError:
+                cache.add(key, 1, 60 * 60)
+            yield user

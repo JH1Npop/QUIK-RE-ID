@@ -1,19 +1,20 @@
 import mimetypes
 
 from django.contrib import messages
-from django.contrib.auth import login
+from django.contrib.auth import login, update_session_auth_hash
+from django.contrib.auth.views import PasswordResetConfirmView, PasswordResetDoneView, PasswordResetView
 from django.contrib.auth.models import Group
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
+from django.urls import reverse, reverse_lazy
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.csp import csp_override
 
 from . import roles, services
-from .forms import SignupForm
+from .forms import ChangePasswordForm, ForgotPasswordForm, NewPasswordForm, SignupForm
 from .models import ApprovalLog, ReplacementRequest, Upload
 
 HOME_FOR_ROLE = {
@@ -111,3 +112,42 @@ def _authorization_back_url(user, req):
     if roles.has_role(user, roles.OSAS):
         return reverse("osas_detail", args=[req.pk])
     return reverse("ph_detail", args=[req.pk])
+
+
+# Passwords ------------------------------------------------------------------
+
+@roles.role_required()
+def password_change(request):
+    """Any logged-in user changes their own password. This device stays logged in; others are logged out."""
+    form = ChangePasswordForm(request.user, request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        user = form.save()
+        update_session_auth_hash(request, user)
+        messages.success(request, "Password changed")
+        return redirect("home")
+    return render(request, "registration/password_change.html", {"form": form})
+
+
+class ForgotPasswordView(PasswordResetView):
+    """Forgot password: emails a one-time link (valid for PASSWORD_RESET_TIMEOUT) through Brevo."""
+    form_class = ForgotPasswordForm
+    template_name = "registration/password_reset.html"
+    email_template_name = "registration/password_reset_email.txt"
+    subject_template_name = "registration/password_reset_subject.txt"
+    success_url = reverse_lazy("password_reset_sent")
+
+
+class ForgotPasswordSentView(PasswordResetDoneView):
+    template_name = "registration/password_reset_sent.html"
+
+
+class NewPasswordView(PasswordResetConfirmView):
+    """The page a reset link opens. After saving, the person logs in with the new password."""
+    form_class = NewPasswordForm
+    template_name = "registration/password_reset_confirm.html"
+    success_url = reverse_lazy("login")
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        messages.success(self.request, "Password changed. Log in with your new password.")
+        return response

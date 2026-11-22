@@ -41,6 +41,7 @@
         <div class="field">
           <label for="id_password">Password</label>
           <input type="password" name="password" id="id_password" class="form-control" autocomplete="current-password" required>
+          <a href="{% url 'password_reset' %}" class="forgot-link">Forgot password?</a>
         </div>
         <input type="hidden" name="next" value="{{ next }}">
         <button type="submit" class="btn btn-primary btn-block">Log in</button>

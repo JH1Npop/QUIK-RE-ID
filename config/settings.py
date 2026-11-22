@@ -105,6 +105,8 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LOGIN_URL = "login"
+# Password reset links work once and expire after an hour.
+PASSWORD_RESET_TIMEOUT = 60 * 60
 LOGIN_REDIRECT_URL = "home"
 LOGOUT_REDIRECT_URL = "login"
 
