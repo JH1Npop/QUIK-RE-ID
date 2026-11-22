@@ -1,0 +1,14 @@
+<ul class="history">
+  {% for log in logs %}
+    <li>
+      <div class="row-top">
+        <span class="what">{{ log.get_action_display }}</span>
+        <span class="when nowrap">{{ log.created_at|date:"M j, Y g:i A" }}</span>
+      </div>
+      <div class="who">by {{ log.actor|default:"a removed user" }}</div>
+      {% if log.remarks %}<div class="note">{{ log.remarks }}</div>{% endif %}
+    </li>
+  {% empty %}
+    <li class="muted">No history yet.</li>
+  {% endfor %}
+</ul>

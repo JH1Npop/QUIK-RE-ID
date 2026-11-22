@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}{{ req.reference_no }} · Quik RE-ID{% endblock %}
+{% block content %}
+<a href="{% url 'student_list' %}" class="back-link">&larr; My requests</a>
+
+<section class="req-hero">
+  <div class="req-hero-main">
+    <div class="req-hero-label">Replacement request</div>
+    <div class="req-hero-ref">
+      <h1>{{ req.reference_no }}</h1>
+      <button type="button" class="copy-btn" data-copy="{{ req.reference_no }}" aria-label="Copy reference number">Copy</button>
+    </div>
+    <div class="req-hero-dates">Filed {{ req.created_at|date:"M j, Y" }} · Updated {{ req.updated_at|date:"M j, Y g:i A" }}</div>
+  </div>
+  <div class="req-hero-side">
+    <span class="{{ req.badge_class }} status-lg">{{ req.get_status_display }}</span>
+    {% if req.has_authorization and req.status != "OSAS_APPROVED" %}
+      <a href="{% url 'authorization' req.pk %}" class="btn btn-hero-quiet btn-hero-link btn-sm">Authorization</a>
+    {% endif %}
+    {% if req.status == "SUBMITTED" %}
+      <button type="button" class="btn btn-hero-quiet btn-sm" data-bs-toggle="modal" data-bs-target="#cancel-modal">Cancel request</button>
+    {% endif %}
+  </div>
+  <div class="req-hero-now">
+    <span class="now-label">Now</span>
+    <span>{% if req.status == "REJECTED" %}Rejected. Fix it and resubmit.{% elif req.status == "CANCELLED" %}You cancelled this request.{% else %}{{ req.next_step_text }}{% endif %}</span>
+  </div>
+</section>
+
+<section class="panel req-sheet">
+{% if req.status != "CANCELLED" %}
+  <div class="sheet-top">
+    {% include "requests_app/includes/tracker.html" %}
+    {% if req.status == "REJECTED" %}
+      <div class="callout callout-danger" style="margin:1.75rem 0 0">
+        <div>
+          <div class="strong">Reason: {{ req.remarks }}</div>
+          <div class="small">Change what's needed, then resubmit. It goes back to your Program Head.</div>
+        </div>
+        <a href="{% url 'student_resubmit' req.pk %}" class="btn btn-primary">Resubmit</a>
+      </div>
+    {% elif req.status == "OSAS_APPROVED" %}
+      <div class="callout callout-info" style="margin:1.75rem 0 0">
+        <div><span class="strong">OSAS approved it.</span> Show your authorization at {% if req.shop %}<b>{{ req.shop.name }}</b>{% else %}the ID shop{% endif %} and pay the replacement fee there.</div>
+        <a href="{% url 'authorization' req.pk %}" class="btn btn-primary">Show authorization</a>
+      </div>
+    {% elif req.status == "PRINTED" %}
+      <div class="callout callout-success" style="margin:1.75rem 0 0">
+        <div><span class="strong">Your new ID is ready.</span> Claim it at {% if req.shop %}<b>{{ req.shop.name }}</b>{% else %}the ID shop{% endif %}. Bring your reference no. <b>{{ req.reference_no }}</b>.</div>
+      </div>
+    {% endif %}
+  </div>
+{% else %}
+  <div class="sheet-top"><p class="muted" style="margin:0">File a new request if you still need a replacement ID.</p></div>
+{% endif %}
+<div class="sheet-grid">
+  <div class="sheet-main">
+    <div class="sheet-sec">
+      <div class="sheet-title">Details</div>
+        <dl class="facts facts-row">
+          <div><dt>Date lost</dt><dd>{{ req.date_lost|date:"M j, Y" }}</dd></div>
+          <div><dt>Place lost</dt><dd>{{ req.place_lost }}</dd></div>
+          <div><dt>Your LRN</dt><dd>{{ req.student.lrn|default:"Not given yet" }}</dd></div>
+        </dl>
+        <dl class="facts" style="margin-top:1rem">
+          <dt>Reason</dt><dd>{{ req.reason|linebreaksbr }}</dd>
+          {% if req.payment %}<dt>Payment</dt><dd>₱{{ req.payment.amount }} · Receipt {{ req.payment.receipt_no }} · {{ req.payment.paid_at|date:"M j, Y" }}</dd>{% endif %}
+        </dl>
+    </div>
+    <div class="sheet-sec">
+      <div class="sheet-title">Your files</div>
+      {% include "requests_app/includes/uploads.html" %}
+    </div>
+  </div>
+  <div class="sheet-side">
+    {% if req.shop %}
+    <div class="sheet-sec">
+      <div class="sheet-title">Your ID shop</div>
+      {% include "requests_app/includes/branch_box.html" with shop=req.shop %}
+    </div>
+    {% endif %}
+    <div class="sheet-sec">
+      <div class="sheet-title">Timeline</div>
+      <ul class="timeline">
+        {% for log in logs reversed %}
+          <li class="tl-{{ log.action|lower }}">
+            <div class="tl-what">{{ log.get_action_display }}</div>
+            <div class="tl-when">{{ log.created_at|date:"M j, Y g:i A" }}</div>
+            {% if log.remarks and log.action == "REJECTED" %}<div class="tl-note">{{ log.remarks }}</div>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+</section>
+
+{% if req.status == "SUBMITTED" %}
+  {% url 'student_cancel' req.pk as cancel_url %}
+  {% include "requests_app/includes/confirm_modal.html" with id="cancel-modal" action=cancel_url title="Cancel this request?" body="You'll need to file a new one." verb="Cancel request" danger=True dismiss="Keep request" %}
+{% endif %}
+{% endblock %}

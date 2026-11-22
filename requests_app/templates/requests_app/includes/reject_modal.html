@@ -1,0 +1,22 @@
+<div class="modal fade" id="reject-modal" tabindex="-1" aria-labelledby="reject-modal-label" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post" action="{{ action }}" data-once>
+        {% csrf_token %}
+        <div class="modal-header">
+          <h2 class="modal-title fs-5" id="reject-modal-label">Reject this request?</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p>The student sees your reason by email and on their request, and can fix it and resubmit.</p>
+          <label for="reject-remarks" class="form-label">Reason</label>
+          <textarea id="reject-remarks" name="remarks" class="form-control" rows="3" maxlength="2000" required></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger">Reject</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

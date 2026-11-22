@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{% if is_new %}New request{% else %}Resubmit {{ req.reference_no }}{% endif %} · Quik RE-ID{% endblock %}
+{% block content %}
+<div class="page-narrow">
+  <a href="{% if is_new %}{% url 'student_list' %}{% else %}{% url 'student_detail' req.pk %}{% endif %}" class="back-link">&larr; {% if is_new %}My requests{% else %}{{ req.reference_no }}{% endif %}</a>
+
+  <section class="dll-card form-card">
+    <div class="id-band">{% if is_new %}Quik RE-ID · New replacement request{% else %}Quik RE-ID · Resubmit {{ req.reference_no }}{% endif %}</div>
+    <div class="dll-body">
+      {% if not is_new and req.remarks %}
+        <div class="callout callout-danger"><div><span class="strong">Rejected:</span> {{ req.remarks }}</div></div>
+      {% endif %}
+      <form method="post" enctype="multipart/form-data" id="request-form" data-confirm="#request-confirm">
+        {% csrf_token %}
+        <h2 class="form-section">What happened</h2>
+        <div class="form-grid">
+          <div class="full">{% include "requests_app/includes/field.html" with field=form.reason %}</div>
+          <div>{% include "requests_app/includes/field.html" with field=form.date_lost %}</div>
+          <div>{% include "requests_app/includes/field.html" with field=form.place_lost %}</div>
+          {% if form.lrn %}<div>{% include "requests_app/includes/field.html" with field=form.lrn %}</div>{% endif %}
+        </div>
+
+        <h2 class="form-section">Attachments <span>PDF, JPG or PNG, up to 5 MB each{% if not is_new %}. Leave empty to keep the current file.{% endif %}</span></h2>
+        <div class="form-grid">
+          <div class="upload-field">{% include "requests_app/includes/field.html" with field=form.letter %}</div>
+          <div class="upload-field">{% include "requests_app/includes/field.html" with field=form.valid_id %}</div>
+        </div>
+
+        {% if branches %}
+          <h2 class="form-section">ID shop branch <span>Where you'll pay, have your photo taken and claim your ID</span></h2>
+          <div class="branch-pick">
+            {% include "requests_app/includes/field.html" with field=form.shop %}
+            {% for b in branches %}
+              <div class="branch-info" data-show-if="{{ form.shop.id_for_label }}" data-show-value="{{ b.id }}"{% if chosen_shop != b.id|stringformat:"d" %} hidden{% endif %}>
+                <div class="branch-card-body">
+                  <span class="branch-name">{{ b.name }}</span>
+                  {% if b.address %}<span class="branch-line">{{ b.address }}</span>{% endif %}
+                  {% if b.hours %}<span class="branch-line muted">{{ b.hours }}</span>{% endif %}
+                </div>
+                <a class="branch-maps-link" href="{{ b.maps }}" target="_blank" rel="noopener">{% if b.has_location %}Open in Google Maps{% else %}Search in Google Maps{% endif %}</a>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        {% if form.consent %}
+          <div class="consent">{% include "requests_app/includes/field.html" with field=form.consent %}</div>
+        {% endif %}
+        <button type="submit" class="btn btn-primary btn-block">{% if is_new %}Submit request{% else %}Resubmit request{% endif %}</button>
+      </form>
+    </div>
+    <footer class="id-foot">{% if is_new %}Your Program Head reviews it first, then OSAS. You get an email at every step.{% else %}It goes back to your Program Head for review.{% endif %}</footer>
+  </section>
+</div>
+
+{% if is_new %}
+  {% include "requests_app/includes/confirm_modal.html" with id="request-confirm" form_id="request-form" title="Submit your request?" body="You can't edit it while it's being reviewed." verb="Submit request" %}
+{% else %}
+  {% include "requests_app/includes/confirm_modal.html" with id="request-confirm" form_id="request-form" title="Resubmit with your changes?" body="It goes back to your Program Head for review, and you can't edit it while it's being reviewed." verb="Resubmit" %}
+{% endif %}
+{% endblock %}

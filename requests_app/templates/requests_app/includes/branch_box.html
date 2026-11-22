@@ -1,0 +1,7 @@
+{# One ID shop branch: name, address, hours and a Google Maps button. #}
+<div class="branch-box">
+  <div class="branch-name">{{ shop.name }}</div>
+  {% if shop.address %}<div class="branch-line">{{ shop.address }}</div>{% endif %}
+  {% if shop.hours %}<div class="branch-line muted">{{ shop.hours }}</div>{% endif %}
+  <a class="btn btn-outline-primary btn-sm branch-maps-btn" href="{{ shop.maps_url }}" target="_blank" rel="noopener">{% if shop.has_location %}Open in Google Maps{% else %}Search in Google Maps{% endif %}</a>
+</div>

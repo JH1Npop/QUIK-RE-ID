@@ -1,0 +1,18 @@
+<a class="req-card{% if req.status == 'REJECTED' %} needs-action{% endif %}" href="{% url 'student_detail' req.pk %}">
+  <div class="req-card-id">
+    <div class="req-ref">{{ req.reference_no }}</div>
+    <div class="req-date">Filed {{ req.created_at|date:"M j, Y" }}</div>
+  </div>
+  <div class="req-card-progress">
+    {% if req.status != "CANCELLED" %}
+      <ol class="mini-steps" aria-label="Progress">
+        {% for step in req.tracker_steps %}<li class="{{ step.state }}" title="{{ step.label }}"></li>{% endfor %}
+      </ol>
+    {% endif %}
+    <div class="req-next">{% if req.status == "REJECTED" %}Rejected: {{ req.remarks|truncatechars:90 }}{% else %}{{ req.next_step_text }}{% endif %}</div>
+  </div>
+  <div class="req-card-end">
+    <span class="{{ req.badge_class }}">{{ req.get_status_display }}</span>
+    <span class="req-open">{% if req.status == "REJECTED" %}Fix and resubmit{% else %}View{% endif %}</span>
+  </div>
+</a>

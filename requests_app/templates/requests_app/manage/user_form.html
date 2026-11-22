@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ account.display_name }} · Quik RE-ID{% endblock %}
+{% block content %}
+<div class="page-narrow">
+  <a href="{% url 'manage_users' %}" class="back-link">&larr; Accounts</a>
+  <section class="panel form-panel">
+    <div class="form-panel-head">
+      <div class="req-hero-label">{{ account_role|default:"No role" }}{% if not account.is_active %} · Deactivated{% endif %}</div>
+      <h1>{{ account.display_name }}</h1>
+      <p>Username <b>{{ account.username }}</b>{% if account.department %} · {{ account.department }}{% endif %}{% if account.shop %} · {{ account.shop }}{% endif %}{% for d in headed %}{% if forloop.first %} · Heads {% endif %}{{ d.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+    </div>
+    <div class="panel-body roomy">
+      {% if form.non_field_errors %}<div class="form-error">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+      <form method="post" id="edit-form" data-confirm="#edit-confirm">
+        {% csrf_token %}
+        <div class="form-grid{% if form.honorific %} name-grid{% endif %}">
+          {% if form.honorific %}<div>{% include "requests_app/includes/field.html" with field=form.honorific %}</div>{% endif %}
+          <div{% if not form.honorific %} class="full"{% endif %}>{% include "requests_app/includes/field.html" with field=form.full_name %}</div>
+          {% if form.title %}<div class="full">{% include "requests_app/includes/field.html" with field=form.title %}</div>{% endif %}
+          <div class="full">{% include "requests_app/includes/field.html" with field=form.email %}</div>
+        </div>
+        {% if form.role %}
+          <div class="form-grid">
+            <div>{% include "requests_app/includes/field.html" with field=form.role %}</div>
+            {% if form.shop %}<div data-show-if="id_role" data-show-value="ID Shop">{% include "requests_app/includes/field.html" with field=form.shop %}</div>{% endif %}
+          </div>
+        {% endif %}
+        {% if form.departments %}
+          <fieldset class="field check-list" data-show-if="id_role" data-show-value="Program Head">
+            <legend>{{ form.departments.label }}</legend>
+            {% for cb in form.departments %}
+              <label class="check-row">{{ cb.tag }} <span>{{ cb.choice_label }}</span></label>
+            {% empty %}
+              <p class="muted">No departments yet. Add one on the Departments page.</p>
+            {% endfor %}
+            <div class="help">{{ form.departments.help_text }}</div>
+            {% for error in form.departments.errors %}<div class="error">{{ error }}</div>{% endfor %}
+          </fieldset>
+        {% endif %}
+        <p class="form-hint">The username can't be changed.{% if not form.role %} A student account stays a student account.{% endif %}</p>
+        <div class="form-actions">
+          <a href="{% url 'manage_users' %}" class="btn btn-quiet">Cancel</a>
+          <button type="submit" class="btn btn-primary">Save changes</button>
+        </div>
+      </form>
+    </div>
+  </section>
+</div>
+{% include "requests_app/includes/confirm_modal.html" with id="edit-confirm" form_id="edit-form" title="Save these changes?" body="The new name and email show everywhere right away." verb="Save changes" %}
+{% endblock %}

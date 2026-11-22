@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}ID shop · Quik RE-ID{% endblock %}
+{% block content %}
+<section class="student-strip staff-strip">
+  <div class="strip-who">
+    <div class="strip-label">ID shop{% if user.title %} · {{ user.title }}{% endif %}</div>
+    <div class="strip-hello">{{ shop.name|default:"ID shop" }}</div>
+  </div>
+  <nav class="strip-stats strip-stats-4 stage-tiles" aria-label="Work stages">
+    {% for st in stages %}
+      <a href="?show={{ st.key }}" class="{% if show == st.key %}active{% endif %}"><span class="tile-num">{{ st.count }}</span><span class="tile-label">{{ st.label }}</span></a>
+    {% endfor %}
+  </nav>
+</section>
+
+{% if shops_set_up and not shop %}
+  <div class="callout callout-warning">
+    <div><span class="strong">You aren't assigned to a branch.</span> You see only older requests filed without a branch. Ask the Admin to choose your branch.</div>
+  </div>
+{% endif %}
+{% if shop and not shop.is_active %}
+  <div class="callout callout-warning">
+    <div><span class="strong">{{ shop.name }} is archived.</span> Students can't choose it anymore. Finish the requests already here.</div>
+  </div>
+{% endif %}
+{% if shop and shop.is_active and not shop.has_location and not shop.address %}
+  <div class="callout callout-info">
+    <div><span class="strong">Students can't see where {{ shop.name }} is yet.</span> <a href="{% url 'shop_branch' %}">Add its Google Maps pin</a> so they can find it.</div>
+  </div>
+{% endif %}
+
+<section class="panel req-list">
+  <div class="toolbar">
+    <nav class="tabs" aria-label="Filter">
+      <a href="?show=active{% if q %}&q={{ q|urlencode }}{% endif %}" class="{% if show == 'active' or stage_label %}active{% endif %}">In progress</a>
+      <a href="?show=released{% if q %}&q={{ q|urlencode }}{% endif %}" class="{% if show == 'released' %}active{% endif %}">Released</a>
+      <a href="?show=all{% if q %}&q={{ q|urlencode }}{% endif %}" class="{% if show == 'all' %}active{% endif %}">All</a>
+    </nav>
+    <form method="get" class="search" role="search">
+      <input type="hidden" name="show" value="{{ show }}">
+      <input type="search" name="q" value="{{ q }}" class="form-control" placeholder="Reference no., student ID or name" aria-label="Search requests">
+      <button class="btn btn-outline-primary" type="submit">Search</button>
+      {% if q %}<a href="?show={{ show }}" class="btn btn-quiet nowrap">Clear</a>{% endif %}
+    </form>
+  </div>
+  {% if stage_label %}
+    <div class="archive-note">Showing <b>{{ stage_label|lower }}</b> only. <a href="?show=active">Show all in progress</a></div>
+  {% endif %}
+  {% for req in requests %}
+    <div class="req-card review-row shop-row">
+      <div class="req-card-id">
+        <a href="{% url 'shop_detail' req.pk %}" class="req-ref">{{ req.reference_no }}</a>
+        <div class="req-date">Updated {{ req.updated_at|date:"M j, Y" }}</div>
+      </div>
+      <div class="review-who">
+        <div class="review-name">{{ req.student.full_name|default:req.student.username }}</div>
+        <div class="review-meta">{{ req.student.username }} · {% if req.payment %}Paid ₱{{ req.payment.amount }} · {{ req.payment.receipt_no }}{% else %}Not paid yet{% endif %}</div>
+        <ol class="mini-steps shop-steps" aria-label="ID shop progress">
+          {% for code, label in req.shop_steps %}<li class="{{ code }}" title="{{ label }}"></li>{% endfor %}
+        </ol>
+      </div>
+      <div class="req-card-end">
+        <span class="{{ req.badge_class }}">{{ req.get_status_display }}</span>
+        <div class="row-actions">
+          <a href="{% url 'shop_detail' req.pk %}" class="btn btn-quiet btn-sm">Open</a>
+          {% include "requests_app/shop/actions.html" with back=request.get_full_path %}
+        </div>
+      </div>
+    </div>
+  {% empty %}
+    <div class="empty">
+      {% if q %}No requests match "{{ q }}".
+      {% elif show == "released" %}No IDs released yet.
+      {% else %}<div class="empty-title">No requests waiting</div>{% endif %}
+    </div>
+  {% endfor %}
+</section>
+{% endblock %}

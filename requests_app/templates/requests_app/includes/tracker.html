@@ -1,0 +1,11 @@
+<ol class="tracker" aria-label="Request progress">
+  {% for step in req.tracker_steps %}
+    <li class="{{ step.state }}" {% if step.state == "current" %}aria-current="step"{% endif %}>
+      <span class="dot">{% if step.state == "done" %}&#10003;{% elif step.state == "rejected" %}&#10005;{% else %}{{ forloop.counter }}{% endif %}</span>
+      <span class="step-text">
+        <span class="step-label">{{ step.label }}</span>
+        {% if step.date %}<span class="step-date">{{ step.date|date:"M j" }}</span>{% elif step.state == "current" %}<span class="step-date">Now</span>{% endif %}
+      </span>
+    </li>
+  {% endfor %}
+</ol>

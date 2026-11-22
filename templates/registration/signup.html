@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Sign up · Quik RE-ID{% endblock %}
+{% block content %}
+<div class="signup-layout">
+  <section class="dll-card">
+    <header class="id-head">
+      <img class="dll-logo" src="{% static 'img/dll-logo.png' %}" alt="Dalubhasaan ng Lungsod ng Lucena logo" data-remove-if-missing>
+      <div class="id-school">
+        <div class="l1">Dalubhasaan ng</div>
+        <div class="l2">Lungsod ng Lucena</div>
+        <div class="l3">Isabang, Lucena City</div>
+      </div>
+    </header>
+    <div class="id-band">Quik RE-ID · Create your student account</div>
+
+    <div class="dll-body">
+      {% if form.non_field_errors %}<div class="form-error">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+      <form method="post" id="signup-form" data-confirm="#signup-confirm">
+        {% csrf_token %}
+        <div class="form-grid">
+          <div>{% include "requests_app/includes/field.html" with field=form.username %}</div>
+          <div>{% include "requests_app/includes/field.html" with field=form.lrn %}</div>
+          <div class="full">{% include "requests_app/includes/field.html" with field=form.full_name %}</div>
+          <div class="full">{% include "requests_app/includes/field.html" with field=form.email %}</div>
+          <div class="full">{% include "requests_app/includes/field.html" with field=form.department %}</div>
+          <div>{% include "requests_app/includes/field.html" with field=form.password1 %}</div>
+          <div>{% include "requests_app/includes/field.html" with field=form.password2 %}</div>
+          <p class="full form-hint">Password: at least 8 characters, not only numbers, and not a common password.</p>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Sign up</button>
+      </form>
+    </div>
+
+    <footer class="id-foot">Already have an account? <a href="{% url 'login' %}">Log in</a></footer>
+  </section>
+
+  <aside class="id-preview" aria-label="Preview of your details">
+    <div class="lanyard-stage preview-stage" data-lanyard>
+      {% include "requests_app/includes/lanyard_svg.html" %}
+      <div class="mini-id" data-lanyard-card aria-hidden="true">
+        <span class="mini-slot"></span>
+        <div class="mini-head">
+          <img src="{% static 'img/dll-logo.png' %}" alt="" draggable="false" data-remove-if-missing>
+          <div>
+            <div class="mini-school">Dalubhasaan ng<br>Lungsod ng Lucena</div>
+            <div class="mini-city">Isabang, Lucena City</div>
+          </div>
+        </div>
+        <div class="mini-band" data-preview="department" data-empty="Your department">Your department</div>
+        <div class="mini-photo">
+          <svg viewBox="0 0 60 70" aria-hidden="true"><circle cx="30" cy="24" r="13"/><path d="M6 70 Q8 44 30 42 Q52 44 54 70 Z"/></svg>
+        </div>
+        <div class="mini-name" data-preview="full_name" data-empty="Your full name">Your full name</div>
+        <div class="mini-foot">
+          <div><span>Student ID</span><b data-preview="username" data-empty="0000-00000">0000-00000</b></div>
+          <div><span>LRN</span><b data-preview="lrn" data-empty="000000000000">000000000000</b></div>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+{% include "requests_app/includes/confirm_modal.html" with id="signup-confirm" form_id="signup-form" title="Create your account?" body="Your student ID becomes your username. Check that it's correct." verb="Create account" %}
+{% endblock %}
+{% block scripts %}<script src="{% static 'js/signup_preview.js' %}"></script><script src="{% static 'js/lanyard.js' %}"></script>{% endblock %}

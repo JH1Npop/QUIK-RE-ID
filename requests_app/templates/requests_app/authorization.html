@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Authorization {{ req.reference_no }} · Quik RE-ID{% endblock %}
+{% block content %}
+<div class="auth-page">
+  <div class="auth-tools no-print">
+    <a href="{{ back_url }}" class="back-link">&larr; Back to {{ req.reference_no }}</a>
+    <button type="button" class="btn btn-primary" data-print>Print or save as PDF</button>
+  </div>
+  {% if is_owner and req.status == "OSAS_APPROVED" %}
+    <div class="callout callout-info no-print">
+      <div><span class="strong">Show this at {% if req.shop %}{{ req.shop.name }}{% else %}the ID shop{% endif %}</span>{% if req.shop.address %} ({{ req.shop.address }}){% endif %} on your phone or printed, and bring the replacement fee. The shop checks the code against Quik RE-ID.</div>
+    </div>
+  {% endif %}
+
+  <article class="auth-slip" aria-label="ID replacement authorization">
+    <header class="id-head auth-head">
+      <div class="id-logo">
+        <img src="{% static 'img/dll-logo.png' %}" alt="Dalubhasaan ng Lungsod ng Lucena logo">
+      </div>
+      <div class="id-school">
+        <div class="l1">Dalubhasaan ng</div>
+        <div class="l2">Lungsod ng Lucena</div>
+        <div class="l3">Office of Student Affairs and Services</div>
+      </div>
+      <div class="auth-stamp auth-stamp-{% if req.status == 'OSAS_APPROVED' %}valid{% elif req.status == 'RELEASED' %}closed{% else %}used{% endif %}">
+        {% if req.status == "OSAS_APPROVED" %}Valid<span>Not yet paid</span>
+        {% elif req.status == "RELEASED" %}Closed<span>ID released</span>
+        {% else %}Used<span>Fee paid{% if paid_log %} {{ paid_log.created_at|date:"M j, Y" }}{% endif %}</span>{% endif %}
+      </div>
+    </header>
+    <div class="id-band">ID replacement authorization</div>
+
+    <div class="auth-body">
+      <div class="auth-numbers">
+        <div>
+          <div class="auth-label">Reference no.</div>
+          <div class="auth-ref">{{ req.reference_no }}</div>
+        </div>
+        <div>
+          <div class="auth-label">Verification code</div>
+          <div class="auth-code">{{ req.authorization_code }}</div>
+        </div>
+      </div>
+
+      <p class="auth-text">
+        This authorizes the ID shop to issue a replacement school ID to the student below, after the replacement fee is paid
+        and a new photo is taken.
+      </p>
+
+      <dl class="auth-grid">
+        <div class="wide"><dt>Student</dt><dd>{{ req.student.full_name|default:req.student.username }}</dd></div>
+        <div><dt>Student ID</dt><dd>{{ req.student.username }}</dd></div>
+        <div><dt>LRN</dt><dd>{{ req.student.lrn|default:"Not given" }}</dd></div>
+        <div class="wide"><dt>Department</dt><dd>{{ req.student.department|default:"No department" }}</dd></div>
+        <div><dt>ID lost on</dt><dd>{{ req.date_lost|date:"M j, Y" }}</dd></div>
+        <div><dt>Request filed</dt><dd>{{ req.created_at|date:"M j, Y" }}</dd></div>
+        {% if req.shop %}<div class="wide"><dt>ID shop branch</dt><dd>{{ req.shop.name }}{% if req.shop.address %}<br><small>{{ req.shop.address }}</small>{% endif %}</dd></div>{% endif %}
+      </dl>
+
+      <div class="auth-signs">
+        <div class="auth-sign">
+          <div class="auth-sign-name">{% if ph_log.actor %}{{ ph_log.actor.display_name }}{% else %}—{% endif %}</div>
+          <div class="auth-sign-role">Program Head{% if ph_log.actor.title %}, {{ ph_log.actor.title }}{% endif %}</div>
+          <div class="auth-sign-date">Approved {% if ph_log %}{{ ph_log.created_at|date:"M j, Y g:i A" }}{% else %}—{% endif %}</div>
+        </div>
+        <div class="auth-sign">
+          <div class="auth-sign-name">{% if osas_log.actor %}{{ osas_log.actor.display_name }}{% else %}—{% endif %}</div>
+          <div class="auth-sign-role">OSAS{% if osas_log.actor.title %}, {{ osas_log.actor.title }}{% endif %}</div>
+          <div class="auth-sign-date">Authorized {% if osas_log %}{{ osas_log.created_at|date:"M j, Y g:i A" }}{% else %}—{% endif %}</div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="auth-foot">
+      <span>Approved online in Quik RE-ID. No signature needed: the ID shop checks the reference no. and code.</span>
+      <span>Shown {% now "M j, Y g:i A" %}</span>
+    </footer>
+  </article>
+</div>
+{% endblock %}

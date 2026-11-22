@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}My requests · Quik RE-ID{% endblock %}
+{% block content %}
+<section class="student-strip">
+  <div class="strip-who">
+    <div class="strip-hello">{{ user.full_name|default:user.username }}</div>
+    <div class="strip-facts">
+      <span><b>Student ID</b> {{ user.username }}</span>
+      <span><b>LRN</b> {{ user.lrn|default:"not given yet" }}</span>
+      <span><b>Department</b> {{ user.department|default:"none" }}</span>
+    </div>
+  </div>
+  {% if active %}
+    <div class="strip-note">One request at a time. You can file a new one once {{ active.0.reference_no }} is released or cancelled.</div>
+  {% else %}
+    <a href="{% url 'student_new' %}" class="btn btn-accent">New request</a>
+  {% endif %}
+</section>
+
+<section class="panel req-list">
+  {% if count_off or archived %}
+    <div class="toolbar tabs-bar">
+      <nav class="tabs" aria-label="Request lists">
+        <a href="{% url 'student_list' %}" class="{% if not archived %}active{% endif %}">My requests</a>
+        <a href="{% url 'student_list' %}?show=archived" class="{% if archived %}active{% endif %}">Archived <span class="tab-count">{{ count_off }}</span></a>
+      </nav>
+    </div>
+  {% else %}
+    <div class="panel-head">My requests</div>
+  {% endif %}
+  {% if archived %}
+    <div class="toolbar archive-filter">
+      <nav class="tabs" aria-label="Filter archived requests">
+        <a href="?show=archived" class="{% if not status %}active{% endif %}">All</a>
+        <a href="?show=archived&amp;status=released" class="{% if status == 'released' %}active{% endif %}">Released <span class="tab-count">{{ count_released }}</span></a>
+        <a href="?show=archived&amp;status=cancelled" class="{% if status == 'cancelled' %}active{% endif %}">Cancelled <span class="tab-count">{{ count_cancelled }}</span></a>
+      </nav>
+    </div>
+    {% for req in requests %}{% include "requests_app/student/request_card.html" %}{% empty %}<div class="empty">Nothing here.</div>{% endfor %}
+  {% elif not requests %}
+    <div class="empty">
+      {% if count_off %}<div class="empty-title">No request in progress</div>
+      {% else %}<div class="empty-title">No requests yet</div>{% endif %}
+      <a href="{% url 'student_new' %}" class="btn btn-primary">File a replacement request</a>
+    </div>
+  {% else %}
+    {% for req in requests %}{% include "requests_app/student/request_card.html" %}{% endfor %}
+  {% endif %}
+</section>
+{% endblock %}

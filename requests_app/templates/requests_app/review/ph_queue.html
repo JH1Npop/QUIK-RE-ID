@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Review queue · Quik RE-ID{% endblock %}
+{% block content %}
+<section class="student-strip staff-strip">
+  <div class="strip-who">
+    <div class="strip-label">Program Head{% if user.title %} · {{ user.title }}{% endif %}</div>
+    <div class="strip-hello">Review queue</div>
+    <div class="strip-facts">
+      <span><b>{% if departments|length > 1 %}Departments{% else %}Department{% endif %}</b> {% for d in departments %}{{ d.name }}{% if not forloop.last %}, {% endif %}{% empty %}none yet{% endfor %}</span>
+    </div>
+  </div>
+  <dl class="strip-stats">
+    <div><dt>Waiting</dt><dd>{{ queue|length }}</dd></div>
+    <div><dt>Approved this week</dt><dd>{{ approved_week }}</dd></div>
+    <div><dt>Rejected this week</dt><dd>{{ rejected_week }}</dd></div>
+  </dl>
+</section>
+
+{% if not departments %}
+  <div class="callout callout-warning">You aren't assigned to a department yet, so no requests show here. Ask the Admin to assign you.</div>
+{% endif %}
+
+<section class="panel req-list">
+  <div class="panel-head">Waiting for your review <span class="muted small">Oldest first</span></div>
+  {% for req in queue %}
+    <a class="req-card review-row" href="{% url 'ph_detail' req.pk %}">
+      <div class="req-card-id">
+        <div class="req-ref">{{ req.reference_no }}</div>
+        <div class="req-date">Filed {{ req.created_at|date:"M j, Y" }}</div>
+      </div>
+      <div class="review-who">
+        <div class="review-name">{{ req.student.full_name }}{% if req.has_earlier %}<span class="flag" title="This student filed a request before">Earlier request</span>{% endif %}</div>
+        <div class="review-meta">{{ req.student.username }} · Lost {{ req.date_lost|date:"M j" }} at {{ req.place_lost|truncatechars:40 }}</div>
+      </div>
+      <div class="req-card-end">
+        <span class="wait{% if req.days_waiting >= 3 %} wait-late{% endif %}">{% if req.days_waiting == 0 %}New today{% else %}Waiting {{ req.days_waiting }} day{{ req.days_waiting|pluralize }}{% endif %}</span>
+        <span class="req-open">Review</span>
+      </div>
+    </a>
+  {% empty %}
+    <div class="empty">
+      <div class="empty-title">No requests waiting</div>
+    </div>
+  {% endfor %}
+</section>
+
+{% if recent %}
+<section class="panel req-list">
+  <div class="panel-head">Recently handled <span class="muted small">Last {{ recent|length }}</span></div>
+  {% for req in recent %}
+    <a class="req-card review-row" href="{% url 'ph_detail' req.pk %}">
+      <div class="req-card-id">
+        <div class="req-ref">{{ req.reference_no }}</div>
+        <div class="req-date">Updated {{ req.updated_at|date:"M j, Y" }}</div>
+      </div>
+      <div class="review-who">
+        <div class="review-name">{{ req.student.full_name }}</div>
+        <div class="review-meta">{{ req.student.username }}</div>
+      </div>
+      <div class="req-card-end">
+        <span class="{{ req.badge_class }}">{{ req.get_status_display }}</span>
+        <span class="req-open">View</span>
+      </div>
+    </a>
+  {% endfor %}
+</section>
+{% endif %}
+{% endblock %}

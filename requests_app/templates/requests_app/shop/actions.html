@@ -1,0 +1,52 @@
+{% comment %}The next ID shop action for one request: a button plus its modal. Needs req and back (redirect URL); hero=True gives the yellow button for the navy page header.{% endcomment %}
+{% with mid=req.pk|stringformat:"d" %}
+{% if req.status == "OSAS_APPROVED" %}
+  <button type="button" class="btn btn-sm {% if hero %}btn-accent{% else %}btn-primary{% endif %}" data-bs-toggle="modal" data-bs-target="#pay-{{ mid }}">Record payment</button>
+  <div class="modal fade text-start" id="pay-{{ mid }}" tabindex="-1" aria-labelledby="pay-{{ mid }}-label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="post" action="{% url 'shop_payment' req.pk %}" data-once>
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ back }}">
+          <div class="modal-header">
+            <h2 class="modal-title fs-5" id="pay-{{ mid }}-label">Record payment for {{ req.reference_no }}?</h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p>Check that the authorization code is <b>{{ req.authorization_code }}</b> on the student's slip, then enter what {{ req.student }} paid. The student is emailed and the request moves to Paid.</p>
+            <div class="modal-field">
+              <label class="form-label" for="amount-{{ mid }}">Amount (₱)</label>
+              <input type="number" step="0.01" min="0.01" name="amount" id="amount-{{ mid }}" class="form-control" required>
+            </div>
+            <div>
+              <label class="form-label" for="receipt-{{ mid }}">Receipt number</label>
+              <input type="hidden" name="suggested_receipt" value="{{ next_receipt }}">
+              <input type="text" name="receipt_no" id="receipt-{{ mid }}" class="form-control" maxlength="50" value="{{ next_receipt }}" placeholder="Numbered automatically">
+              <div class="form-text">Numbered automatically. Change it only to match a paper official receipt.</div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">Record payment</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% elif req.status == "PAID" %}
+  <button type="button" class="btn btn-sm {% if hero %}btn-accent{% else %}btn-primary{% endif %}" data-bs-toggle="modal" data-bs-target="#photo-{{ mid }}">Mark as photo taken</button>
+  {% url 'shop_photo' req.pk as photo_url %}
+  {% include "requests_app/includes/confirm_modal.html" with id="photo-"|add:mid action=photo_url next=back title="Mark as photo taken?" body="The student's new photo is on file. Printing is next." verb="Mark as photo taken" %}
+{% elif req.status == "PHOTO_TAKEN" %}
+  <button type="button" class="btn btn-sm {% if hero %}btn-accent{% else %}btn-primary{% endif %}" data-bs-toggle="modal" data-bs-target="#printed-{{ mid }}">Mark as printed</button>
+  {% url 'shop_printed' req.pk as printed_url %}
+  {% include "requests_app/includes/confirm_modal.html" with id="printed-"|add:mid action=printed_url next=back title="Mark as printed?" body="The student is emailed that their ID is ready to claim." verb="Mark as printed" %}
+{% elif req.status == "PRINTED" %}
+  <button type="button" class="btn btn-sm {% if hero %}btn-accent{% else %}btn-success{% endif %}" data-bs-toggle="modal" data-bs-target="#release-{{ mid }}">Release</button>
+  {% url 'shop_release' req.pk as release_url %}
+  {% with sname=req.student.full_name|default:req.student.username %}
+  {% with release_title="Release the ID to "|add:sname|add:"?" %}
+  {% include "requests_app/includes/confirm_modal.html" with id="release-"|add:mid action=release_url next=back title=release_title body="This closes the request." verb="Release" %}
+  {% endwith %}{% endwith %}
+{% endif %}
+{% endwith %}

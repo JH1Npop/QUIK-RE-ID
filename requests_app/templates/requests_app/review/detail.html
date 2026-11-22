@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}{{ req.reference_no }} · Quik RE-ID{% endblock %}
+{% block content %}
+{% if viewer_role == "OSAS" %}
+  {% url 'osas_queue' as back_url %}{% url 'osas_approve' req.pk as approve_url %}{% url 'osas_reject' req.pk as reject_url %}
+{% else %}
+  {% url 'ph_queue' as back_url %}{% url 'ph_approve' req.pk as approve_url %}{% url 'ph_reject' req.pk as reject_url %}
+{% endif %}
+
+<a href="{{ back_url }}" class="back-link">&larr; Back to queue</a>
+
+<section class="req-hero">
+  <div class="req-hero-main">
+    <div class="req-hero-label">{% if viewer_role == "OSAS" %}OSAS review{% else %}Program Head review{% endif %}</div>
+    <div class="req-hero-ref">
+      <h1>{{ req.reference_no }}</h1>
+      <button type="button" class="copy-btn" data-copy="{{ req.reference_no }}" aria-label="Copy reference number">Copy</button>
+    </div>
+    <div class="req-hero-dates">{{ req.student.full_name }} · {{ req.student.username }} · Filed {{ req.created_at|date:"M j, Y" }}</div>
+  </div>
+  <div class="req-hero-side">
+    <span class="{{ req.badge_class }} status-lg">{{ req.get_status_display }}</span>
+    {% if req.has_authorization %}<a href="{% url 'authorization' req.pk %}" class="btn btn-hero-quiet btn-hero-link btn-sm">Authorization</a>{% endif %}
+  </div>
+  <div class="req-hero-now{% if can_decide %} hero-decide{% endif %}">
+    {% if can_decide %}
+      <span class="now-label">Next</span>
+      <span class="hero-decide-text">Check the letter and the valid ID.</span>
+      <span class="hero-decide-actions">
+        <button type="button" class="btn btn-hero-quiet btn-sm" data-bs-toggle="modal" data-bs-target="#reject-modal">Reject</button>
+        <button type="button" class="btn btn-accent btn-sm" data-bs-toggle="modal" data-bs-target="#approve-modal">Approve</button>
+      </span>
+    {% else %}
+      <span class="now-label">Now</span>
+      <span>{% if req.status == "REJECTED" %}Rejected. Waiting for the student to fix it and resubmit.{% elif req.status == "CANCELLED" %}The student cancelled this request.{% else %}No decision needed from you. {{ req.next_step_text }}{% endif %}</span>
+    {% endif %}
+  </div>
+</section>
+
+{% if other_requests %}
+  <div class="callout callout-warning">
+    <div><span class="strong">This student has other requests:</span>
+    {% for o in other_requests %}{{ o.reference_no }} ({{ o.get_status_display|lower }}, {{ o.created_at|date:"M j, Y" }}){% if not forloop.last %}; {% endif %}{% endfor %}</div>
+  </div>
+{% endif %}
+
+<section class="panel req-sheet">
+  {% if req.status != "CANCELLED" %}
+    <div class="sheet-top">
+      {% include "requests_app/includes/tracker.html" %}
+      {% if req.remarks %}
+        <div class="callout callout-danger" style="margin:1.75rem 0 0"><div><span class="strong">Rejection reason:</span> {{ req.remarks }}</div></div>
+      {% endif %}
+    </div>
+  {% endif %}
+  <div class="sheet-grid">
+    <div class="sheet-main">
+      <div class="sheet-sec">
+        <div class="sheet-title">Student</div>
+        <dl class="facts facts-row facts-2">
+          <div><dt>Name</dt><dd>{{ req.student.full_name }}</dd></div>
+          <div><dt>Student ID</dt><dd>{{ req.student.username }}</dd></div>
+          <div><dt>LRN</dt><dd>{{ req.student.lrn|default:"Not given yet" }}</dd></div>
+          <div><dt>Department</dt><dd>{{ req.student.department|default:"No department" }}</dd></div>
+          <div><dt>Email</dt><dd>{{ req.student.email }}</dd></div>
+          {% if req.shop %}<div><dt>ID shop branch</dt><dd>{{ req.shop.name }}</dd></div>{% endif %}
+        </dl>
+      </div>
+      <div class="sheet-sec">
+        <div class="sheet-title">What happened</div>
+        <dl class="facts facts-row">
+          <div><dt>Date lost</dt><dd>{{ req.date_lost|date:"M j, Y" }}</dd></div>
+          <div><dt>Place lost</dt><dd>{{ req.place_lost }}</dd></div>
+        </dl>
+        <dl class="facts" style="margin-top:1rem">
+          <dt>Reason</dt><dd>{{ req.reason|linebreaksbr }}</dd>
+        </dl>
+      </div>
+      <div class="sheet-sec">
+        <div class="sheet-title">Uploads</div>
+        {% include "requests_app/includes/uploads.html" %}
+      </div>
+    </div>
+    <div class="sheet-side">
+      <div class="sheet-sec">
+        <div class="sheet-title">Approval history</div>
+        {% include "requests_app/includes/history.html" %}
+      </div>
+    </div>
+  </div>
+</section>
+
+{% if can_decide %}
+  {% if viewer_role == "OSAS" %}
+    {% include "requests_app/includes/confirm_modal.html" with id="approve-modal" action=approve_url title="Approve and create the authorization?" body="The ID shop will see it." verb="Approve" %}
+  {% else %}
+    {% include "requests_app/includes/confirm_modal.html" with id="approve-modal" action=approve_url title="Approve this request?" body="It goes to OSAS next." verb="Approve" %}
+  {% endif %}
+  {% include "requests_app/includes/reject_modal.html" with action=reject_url %}
+{% endif %}
+{% endblock %}

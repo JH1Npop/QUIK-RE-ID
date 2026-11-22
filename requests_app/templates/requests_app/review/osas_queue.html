@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}OSAS queue · Quik RE-ID{% endblock %}
+{% block content %}
+<section class="student-strip staff-strip">
+  <div class="strip-who">
+    <div class="strip-label">OSAS{% if user.title %} · {{ user.title }}{% endif %}</div>
+    <div class="strip-hello">OSAS queue</div>
+  </div>
+  <dl class="strip-stats">
+    <div><dt>Waiting</dt><dd>{{ waiting }}</dd></div>
+    <div><dt>Approved this week</dt><dd>{{ approved_this_week }}</dd></div>
+    <div><dt>Rejected this week</dt><dd>{{ rejected_this_week }}</dd></div>
+  </dl>
+</section>
+
+{% if late %}
+  <div class="callout callout-warning">
+    <div><span class="strong">{{ late }} request{{ late|pluralize }} waiting 3 days or more.</span></div>
+  </div>
+{% endif %}
+
+<section class="panel req-list">
+  <div class="panel-head">Waiting for OSAS <span class="muted small">Oldest first</span></div>
+  {% for req in queue %}
+    <a class="req-card review-row" href="{% url 'osas_detail' req.pk %}">
+      <div class="req-card-id">
+        <div class="req-ref">{{ req.reference_no }}</div>
+        <div class="req-date">Filed {{ req.created_at|date:"M j, Y" }}</div>
+      </div>
+      <div class="review-who">
+        <div class="review-name">{{ req.student.full_name }}{% if req.has_earlier %}<span class="flag" title="This student filed a request before">Earlier request</span>{% endif %}</div>
+        <div class="review-meta">{{ req.student.username }} · {{ req.student.department|default:"No department" }}</div>
+      </div>
+      <div class="req-card-end">
+        <span class="wait{% if req.days_waiting >= 3 %} wait-late{% endif %}">{% if req.days_waiting == 0 %}New today{% else %}Waiting {{ req.days_waiting }} day{{ req.days_waiting|pluralize }}{% endif %}</span>
+        <span class="req-open">Review</span>
+      </div>
+    </a>
+  {% empty %}
+    <div class="empty">
+      <div class="empty-title">No requests waiting</div>
+    </div>
+  {% endfor %}
+</section>
+
+<section class="panel req-list" id="find">
+  <div class="panel-head">Find any request <span class="muted small">Any status, any department</span></div>
+  <div class="toolbar">
+    <form method="get" action="#find" class="search" role="search" style="max-width:none">
+      <input type="search" name="q" value="{{ q }}" class="form-control" placeholder="Reference no., student ID or name" aria-label="Search requests">
+      <button class="btn btn-outline-primary" type="submit">Search</button>
+      {% if q %}<a href="{% url 'osas_queue' %}" class="btn btn-quiet nowrap">Clear</a>{% endif %}
+    </form>
+    {% if cancelled_view %}<a href="{% url 'osas_queue' %}#find" class="btn btn-quiet nowrap">Hide cancelled</a>
+    {% else %}<a href="?show=cancelled#find" class="btn btn-quiet nowrap">Cancelled <span class="tab-count">{{ cancelled_count }}</span></a>{% endif %}
+  </div>
+  {% if cancelled_view %}<div class="archive-note">Requests students cancelled, newest first.</div>{% endif %}
+  {% if found is not None %}
+    {% for req in found %}
+      <a class="req-card review-row" href="{% url 'osas_detail' req.pk %}">
+        <div class="req-card-id">
+          <div class="req-ref">{{ req.reference_no }}</div>
+          <div class="req-date">Filed {{ req.created_at|date:"M j, Y" }}</div>
+        </div>
+        <div class="review-who">
+          <div class="review-name">{{ req.student.full_name }}</div>
+          <div class="review-meta">{{ req.student.username }} · {{ req.student.department|default:"No department" }}</div>
+        </div>
+        <div class="req-card-end">
+          <span class="{{ req.badge_class }}">{{ req.get_status_display }}</span>
+          <span class="req-open">View</span>
+        </div>
+      </a>
+    {% empty %}
+      <div class="empty">{% if cancelled_view %}No cancelled requests.{% else %}No requests match "{{ q }}".{% endif %}</div>
+    {% endfor %}
+  {% endif %}
+</section>
+{% endblock %}

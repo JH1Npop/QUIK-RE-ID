@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}ID shops · Quik RE-ID{% endblock %}
+{% block content %}
+<section class="student-strip staff-strip">
+  <div class="strip-who">
+    <div class="strip-label">Admin</div>
+    <div class="strip-hello">ID shops</div>
+  </div>
+  <dl class="strip-stats">
+    <div><dt>Branches</dt><dd>{{ count_active }}</dd></div>
+    <div><dt>Waiting to pay</dt><dd>{{ to_pay }}</dd></div>
+  </dl>
+</section>
+
+{% if unassigned and shops %}
+  <div class="callout callout-warning">
+    <div><span class="strong">{{ unassigned|length }} ID shop staff without a branch:</span>
+      {% for u in unassigned %}<a href="{% url 'manage_user_edit' u.pk %}">{{ u.display_name }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}.
+      Their payments aren't tied to a branch. Open each account and choose one.</div>
+  </div>
+{% endif %}
+
+<section class="panel">
+  <div class="toolbar tabs-bar">
+    <nav class="tabs" aria-label="Branch lists">
+      <a href="{% url 'manage_shops' %}" class="{% if not archived %}active{% endif %}">Active</a>
+      <a href="{% url 'manage_shops' %}?show=archived" class="{% if archived %}active{% endif %}">Archived <span class="tab-count">{{ count_off }}</span></a>
+    </nav>
+  </div>
+  {% if archived %}
+    <div class="archive-note">Students can't choose these branches. Requests already sent to one stay with it until they're done.</div>
+  {% endif %}
+  <div class="table-wrap">
+    <table class="data-table stack dept-table">
+      <thead><tr><th>Branch</th><th>Location</th><th>Staff</th><th class="num">In progress</th><th class="num">Released</th></tr></thead>
+      <tbody>
+      {% for shop in shops %}
+        <tr class="{% if not shop.staff_count and not archived %}row-warn{% endif %}">
+          <td><div class="dept-name">
+            <span class="strong">{{ shop.name }}</span>
+            <span class="name-btns">
+            <button type="button" class="btn btn-quiet btn-xs" data-bs-toggle="modal" data-bs-target="#rename-{{ shop.pk }}">Rename</button>
+            {% if archived %}<button type="button" class="btn btn-quiet btn-xs" data-bs-toggle="modal" data-bs-target="#reactivate-{{ shop.pk }}">Reactivate</button>
+            {% else %}<button type="button" class="btn btn-danger-quiet btn-xs" data-bs-toggle="modal" data-bs-target="#archive-{{ shop.pk }}">Archive</button>{% endif %}
+            </span>
+          </div></td>
+          <td data-label="Location"><div>{% if shop.address %}{{ shop.address }}{% endif %}{% if shop.has_location %}{% if shop.address %} · {% endif %}<a href="{{ shop.maps_url }}" target="_blank" rel="noopener">Google Maps</a>{% elif not shop.address %}<span class="muted">Not set yet</span>{% endif %}</div></td>
+          <td data-label="Staff"><div>{% for u in shop.active_staff %}<a href="{% url 'manage_user_edit' u.pk %}">{{ u.display_name }}</a>{% if not forloop.last %}, {% endif %}{% empty %}<span class="muted">No staff yet</span>{% endfor %}</div></td>
+          <td class="num" data-label="In progress">{{ shop.in_progress }}</td>
+          <td class="num" data-label="Released">{{ shop.released }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5"><div class="empty">{% if archived %}No archived branches.{% else %}No branches yet.{% endif %}</div></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if not archived %}
+<section class="panel add-dept">
+  <div class="panel-head">Add a branch</div>
+  <div class="panel-body">
+    <form method="post" action="{% url 'manage_shop_add' %}" id="shop-form" data-confirm="#shop-confirm" class="inline-form">
+      {% csrf_token %}
+      <input type="text" name="name" maxlength="150" class="form-control" placeholder="e.g. Main campus ID shop" aria-label="Branch name" required>
+      <button type="submit" class="btn btn-primary nowrap">Add branch</button>
+    </form>
+    <p class="form-hint">A branch shows up for students once it has at least one ID shop staffer.</p>
+  </div>
+</section>
+{% endif %}
+
+{% for shop in shops %}
+  {% with mid=shop.pk|stringformat:"d" %}
+  {% if archived %}
+    {% url 'manage_shop_reactivate' shop.pk as react_url %}
+    {% include "requests_app/includes/confirm_modal.html" with id="reactivate-"|add:mid action=react_url title="Reactivate this branch?" body="Students can choose it again once it has ID shop staff." verb="Reactivate" %}
+  {% else %}
+    {% url 'manage_shop_archive' shop.pk as arch_url %}
+    {% include "requests_app/includes/confirm_modal.html" with id="archive-"|add:mid action=arch_url title="Archive this branch?" body="Students can't choose it anymore. Requests already sent to it stay with it, and its staff can finish them." verb="Archive" danger=True %}
+  {% endif %}
+  {% endwith %}
+  <div class="modal fade" id="rename-{{ shop.pk }}" tabindex="-1" aria-labelledby="rename-{{ shop.pk }}-label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="post" action="{% url 'manage_shop_rename' shop.pk %}" data-once>
+          {% csrf_token %}
+          <div class="modal-header">
+            <h2 class="modal-title fs-5" id="rename-{{ shop.pk }}-label">Rename this branch?</h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p>Students and staff see the new name everywhere right away.</p>
+            <label for="rename-name-{{ shop.pk }}" class="form-label">Branch name</label>
+            <input id="rename-name-{{ shop.pk }}" type="text" name="name" value="{{ shop.name }}" maxlength="150" class="form-control" required>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">Rename</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endfor %}
+{% include "requests_app/includes/confirm_modal.html" with id="shop-confirm" form_id="shop-form" title="Add this ID shop branch?" body="You can then assign ID shop staff to it." verb="Add branch" %}
+{% endblock %}

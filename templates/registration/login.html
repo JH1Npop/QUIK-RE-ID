@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Log in · Quik RE-ID{% endblock %}
+{% block content %}
+<canvas class="campus-bg" data-campus aria-hidden="true"></canvas>
+<div class="lanyard-stage login-stage" data-lanyard data-lanyard-fit>
+  {% include "requests_app/includes/lanyard_svg.html" %}
+
+  <div class="id-card" data-lanyard-card>
+    <span class="id-card-slot" aria-hidden="true"></span>
+    <header class="id-head">
+      <div class="id-logo">
+        <!-- Drawn emblem; covered by the real school logo when static/img/dll-logo.png exists -->
+        <svg class="id-seal" viewBox="0 0 48 48" aria-hidden="true">
+          <circle cx="24" cy="24" r="23" class="seal-outer"/>
+          <circle cx="24" cy="24" r="18.5" class="seal-ring"/>
+          <circle cx="24" cy="24" r="16" class="seal-inner"/>
+          <use href="#elephant" x="11" y="15" width="26" height="18" class="seal-elephant"/>
+        </svg>
+        <img src="{% static 'img/dll-logo.png' %}" alt="Dalubhasaan ng Lungsod ng Lucena logo" draggable="false" data-remove-if-missing>
+      </div>
+      <div class="id-school">
+        <div class="l1">Dalubhasaan ng</div>
+        <div class="l2">Lungsod ng Lucena</div>
+        <div class="l3">Isabang, Lucena City</div>
+      </div>
+    </header>
+    <div class="id-band">Quik RE-ID · Student ID replacement</div>
+
+    <div class="id-card-body">
+      <h1>Log in</h1>
+      <p class="lead">Lost your school ID? Request a replacement online.</p>
+      {% if form.non_field_errors %}<div class="form-error">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+      <form method="post" data-once>
+        {% csrf_token %}
+        <div class="field">
+          <label for="id_username">Student ID</label>
+          <input type="text" name="username" id="id_username" class="form-control"
+                 value="{{ form.username.value|default:'' }}" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label for="id_password">Password</label>
+          <input type="password" name="password" id="id_password" class="form-control" autocomplete="current-password" required>
+        </div>
+        <input type="hidden" name="next" value="{{ next }}">
+        <button type="submit" class="btn btn-primary btn-block">Log in</button>
+      </form>
+    </div>
+
+    <footer class="id-foot">New student? <a href="{% url 'signup' %}">Create an account</a></footer>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'js/lanyard.js' %}"></script><script src="{% static 'js/campus_bg.js' %}"></script>{% endblock %}

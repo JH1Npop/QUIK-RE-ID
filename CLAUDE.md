@@ -1,0 +1,107 @@
+# Quik RE-ID
+
+A Django app where a student who lost their school ID files a replacement request. The request goes to the student's Program Head, then OSAS (Office of Student Affairs and Services), then the ID shop, where the student pays, has a photo taken and collects the printed ID. One Django app: `requests_app`.
+
+## Stack
+
+- Django 6 with server-rendered templates. Bootstrap 5.3 comes from a CDN and is only used for modals, buttons, form controls and alerts. The layout and the look are in `static/css/app.css`.
+- PostgreSQL is hosted on **Aiven** (free plan), via psycopg 3.
+- Uploads go to **Cloudinary** and are always private (`type="authenticated"`).
+- Email is sent through the **Brevo** SMTP relay with Django `send_mail`. Gmail is not used.
+- Static files are served by WhiteNoise. All secrets live in `.env` and are read with django-environ. `.env.example` lists the variable names only.
+- No deploy host has been chosen yet (Phase 7: Render, Railway or PythonAnywhere). Ask the user before deploying.
+
+## Commands (Windows PowerShell)
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python manage.py runserver
+python manage.py migrate
+python manage.py seed_demo --password "<pw>" --student-email <their address>   # 2 departments + one user per role
+python manage.py test --settings=config.settings_test     # fast, in-memory SQLite (~3 s)
+python manage.py test                                      # real PostgreSQL on Aiven (~7 min), run before a release
+python manage.py sendtestemail <address>                   # checks the Brevo setup
+```
+
+The demo users are `2026-00001` (student), `programhead`, `osas`, `idshop` and `portaladmin`.
+
+## Where things live
+
+| File | What it holds |
+|---|---|
+| `requests_app/services.py` | **The only place where a status changes.** It holds `ALLOWED_CHANGES` (which status can go to which, and which role may do it), `change_status`, `create_request`, `resubmit_request`, `record_payment`, `notify_student` and `can_view`. |
+| `requests_app/roles.py` | Group names, `has_role` and the `@role_required(...)` decorator. The decorator sends anonymous users to login with "Your session expired…" when they had a session cookie, and returns 403 for the wrong role. |
+| `requests_app/storage.py` | `PrivateCloudinaryStorage`: authenticated uploads, downloaded on the server through `private_download_url`. `url()` raises on purpose. |
+| `requests_app/forms.py` | Forms, plus `validate_upload`, which checks the extension, the 5 MB limit and the file's real first bytes. |
+| `requests_app/*_views.py` | Views split by role: `student_views`, `review_views` (Program Head and OSAS), `shop_views`, `admin_views`. `views.py` holds home, sign-up and `upload_file`. |
+| `config/pg_backend/` | The PostgreSQL backend with a 10-second connect timeout and 4 retries, because Aiven stalls the first connection after it has been idle. |
+| `templates/` and `requests_app/templates/requests_app/` | Pages. The shared pieces are in `includes/`: `confirm_modal`, `reject_modal`, `preview_modal`, `field`, `tracker`, `uploads` and `history`. |
+
+## Rules to keep
+
+- **Status changes go through `services.change_status`.** It runs one transaction that locks the row, writes an `ApprovalLog` row, and emails the student through `on_commit`. Never set `.status` directly. The Django admin shows status as read-only.
+- **Every view checks the role** with `@role_required(...)`. A student only sees their own requests (403 otherwise), and a Program Head only sees their own department (`services.is_program_head_of`).
+- **Data-changing views accept POST only** (`@require_POST`) and need the CSRF token.
+- **Uploads are only served through the `upload_file` view**, which checks `services.can_view`. Never put a Cloudinary link in a page, and never call `.url` on an upload.
+- **Every data-changing action opens a modal first:**
+  - A modal with its own form: include `includes/confirm_modal.html` with `action=...`.
+  - A form on the page: give the form `id` and `data-confirm="#modal-id"`, then include `confirm_modal.html` with `form_id=...`.
+  - Modals can be written next to their button (inside rows or the navy header): `app.js` moves every `.modal` to `<body>` on load so it never inherits that spot's styles (white text, `nowrap`). Don't remove that.
+  - Forms marked `data-once` (and the modal's confirm button) disable themselves after one click. That logic is in `static/js/app.js`.
+- **Flash messages:** success and info messages close themselves after 5 seconds (paused while the pointer is on them); warnings and errors stay until closed. Also in `app.js`.
+- **User-facing text is in sentence case and never uses "please" or "successfully".** A test checks this. The exact modal and message texts come from the original brief, and the tests look for them, so don't reword them.
+- **Students have an LRN** (`User.lrn`): 12 digits, unique, and required at sign-up. Students who signed up before LRN existed are asked for it on their next request form (`ask_lrn`). It is shown only to the student and the staff handling their request, never in lists or reports.
+- **One open request per student.** Anything not Released or Cancelled counts as open, including Rejected (the student resubmits instead). `services.create_request` enforces it under a row lock on the student, and `student_new` redirects to the open request. Cancelling is final. Test fixtures that need several open requests patch `services.open_request` (see `PortalTestCase.make_request`).
+- **Names:** staff have an optional `honorific` (Mr., Ms., Mrs., Dr., Prof., Engr., Atty.) and `title` (shown as "Position"). Show people with `user.display_name` ("Mrs. Lee Ann Tabanao"), which is also `str(user)`, so the approval history and the Program Head dropdowns get it too. Students have neither field (`AccountEditForm` drops them). Emails are unique across accounts (case-insensitive).
+- **Admin pages:** Accounts has two tabs, Active and Archived (`?show=archived`, the deactivated accounts, which keep their requests and history). Accounts (create staff, edit name/email/honorific/position, deactivate, reactivate), ID shops (see below) and Departments (add, rename, assign Program Head, with student and open-request counts). A staff account's Edit page also changes the role (not your own; students stay students) and, while the role is Program Head, shows "Heads these departments" checkboxes (ticking one that has another head moves it). Leaving the Program Head role or being deactivated frees their departments, and the Admin is warned. The username can't be changed.
+- **Archives (nothing is deleted):**
+  - **Finished requests** (Released and Cancelled) leave the student's main list, which shows only open ones, for an "Archived" tab (`?show=archived`, shown once they have one) with an All / Released / Cancelled filter (`&status=released|cancelled`). OSAS sees them with the "Cancelled" button in "Find any request" (`?show=cancelled`); the Program Head's "Recently handled" skips them.
+  - **Departments and ID shop branches** have `is_active`. The Admin archives or reactivates them on the Departments and ID shops pages (Active / Archived tabs, confirm modals, `manage_department_archive` / `_reactivate`, `manage_shop_archive` / `_reactivate`).
+  - An archived department disappears from sign-up and the staff forms, but keeps its students, requests and Program Head (a head's edit page still lists the archived departments they head, so saving doesn't drop them).
+  - An archived branch isn't offered to students (`services.open_shops` needs `is_active`), but its staff keep it, see a warning on their list, and finish the requests already sent to it.
+- **Authorization slip** (`/requests/<pk>/authorization/`, `views.authorization`, template `authorization.html`): once OSAS approves (`req.has_authorization`, statuses in `AUTHORIZED_STATUSES`), the student gets a printable DLL-style slip to show at the ID shop. It carries the reference no., `req.authorization_code` (an HMAC of the request from SECRET_KEY, not stored; changing SECRET_KEY changes every code) and the Program Head and OSAS approvals, with a stamp: Valid, Used (fee paid) or Closed. The ID shop's request page shows the same code to compare. Visible to whoever `can_view` the request. "Print or save as PDF" uses print CSS that hides the top bar.
+- **ID shop branches** (`IdShop`), like choosing a passport site:
+  - **The student picks the branch** on the new-request form (a dropdown; the chosen branch's address, hours and "Open in Google Maps" link show under it; can be changed on resubmit, fixed after that). Only branches with at least one active ID shop staffer are offered (`services.open_shops`). With none, the field is left out and the request has no branch.
+  - **Only the chosen branch** sees the request, its stage counts, uploads and slip, and can act on it (`services.is_shop_of`, `shop_scope`; `_shop_request` returns 403). A request with no branch (filed before branches existed) is open to every branch, and `record_payment` gives it to the paying branch. Payment never changes a chosen branch.
+  - **Admin → ID shops** (`/manage/shops/`): add, rename, see each branch's location, staff and work. Staff get a branch on the staff forms (required once any branch exists; cleared when they leave the ID Shop role).
+  - **The branch's own staff set its location** under My branch (`/shop/branch/`, `shop_views.shop_branch`, `BranchLocationForm`): they drop a pin in Google Maps and paste its link (`IdShop.maps_link`; a link or an address is required), plus optional address and open hours. Only Google Maps links are accepted (`forms.is_google_maps_link`: google.com / google.com.ph style hosts with `/maps`, `maps.google.*`, `maps.app.goo.gl`, `goo.gl/maps`). Full links also fill `latitude`/`longitude` (`coords_from_maps_link`); short share links don't carry them and are kept as is.
+  - **No embedded maps and no map libraries** (the user asked to drop OpenStreetMap). Everywhere a branch is shown there's an "Open in Google Maps" link (`IdShop.maps_url`: the saved link, else the coordinates, else a search for name and address). No Google API key is needed.
+  - The student's page ("Your ID shop" box with a Google Maps button), the slip, the PH/OSAS detail and the status emails show the branch.
+- **Receipt numbers are automatic:** `services.next_receipt_no()` gives `OR-YYYY-0001`, and the payment window is prefilled with it. Left unchanged (or blank) it's numbered at save time, retrying if another payment took it; a typed paper-receipt number is kept as is and must be unique. Custom numbers don't affect the sequence.
+- **The reference number is `REQ-YYYY-0001`**, built by `services.next_reference_no`. It continues past 9999.
+
+## Design (CSS)
+
+- Use the semantic classes from `app.css`: `page-head`, `panel` / `panel-head` / `panel-body`, `split`, `data-table`, `stats` / `stat`, `status status-<code>`, `callout`, `toolbar` / `tabs` / `search`, `form-grid` / `field`, `files` / `file` and `history`. Avoid Bootstrap utility classes such as `d-flex` and `mb-3` in templates.
+- Colours and radii are tokens in `:root` at the top of `app.css`. Change them there. The brand is DLL: `--primary` is the DLL navy, and `--dll-navy`, `--dll-yellow` and `--dll-sky` are used for the ID-card look (login, sign-up, the student strip, form cards and the status band).
+- The portal's own logo is `static/img/quik-reid-logo.svg` (navy tile, white school ID, yellow "replace" arrow badge). It's in the top bar next to the wordmark "Quik **RE-ID**" and "Student ID replacement", and it's the favicon. The DLL logo is only on the ID cards.
+- Page pattern (student and Program Head/OSAS pages): a navy strip or `req-hero` header, then one `panel req-list` of `req-card` rows, or one `panel req-sheet` (tracker on top in `sheet-top`, then `sheet-grid` with `sheet-main` sections and a grey `sheet-side`) split by divider lines instead of separate cards. Staff strips show their numbers in `strip-stats`; the reviewer's Approve/Reject buttons sit in the hero's "Next" bar (`hero-decide`).
+- Keep it plain, not "AI-looking": solid navy headers (no gradients or coloured glow shadows), no hover lift, section titles in normal case (uppercase only for table headers and the small yellow labels), strip headlines are the page or person's name (no "Hello, …"), no explainer sentence under every heading, and empty states say what's missing ("No requests waiting"), not "All caught up".
+- OSAS Reports: a plain-CSS column chart (`col-chart`, one navy series, value labels only on the busiest and latest months, a hover/focus tooltip from `data-tip`, and a "Show as table" `<details>` for accessibility), then by department (inline bars) and by status. No chart library.
+- ID shop: the list's strip tiles are the four work stages (`?show=pay|photo|print|claim`, `shop_views.STAGES`), rows are `shop-row` with `req.shop_steps` mini progress and the next action inline (`shop/actions.html`; `hero=True` gives yellow buttons for the request page's "Next" bar). The request page leads with "Check the student": the authorization code to compare with the slip.
+- Status badges use `req.badge_class`, which gives `status status-ph-approved` and so on.
+- On phones, tables with the class `data-table stack` turn into one card per row. Give each cell a `data-label`, and wrap any cell with more than one line in a `<div>`.
+- The login form itself is a DLL-style school ID (real logo at `static/img/dll-logo.png`, with a drawn emblem as the fallback) hanging on a stretchy two-strap lanyard (a V shape meeting at the clip, printed "DLL", an elephant and "DLL REDEFINES"). The code is `static/js/lanyard.js` (two Verlet ropes sharing an end point, plain JS) and the "Login" section at the end of `app.css`. The strap drawing is shared in `includes/lanyard_svg.html`. The sign-up page's live mini-ID preview (`static/js/signup_preview.js`) hangs on the same lanyard. A stage is `[data-lanyard]` and its card is `[data-lanyard-card]`; `data-lanyard-fit` (login only) sizes the stage to the window, and otherwise the stage's CSS height is used. You can drag it from anywhere on the card except the fields, button, labels and link (`INTERACTIVE`). The grabbed spot stays under the pointer and the card turns around it. It stops swinging while a field has focus. Without JS it falls back to a normal centred card. Behind it, the login page has pixel-art students walking across the campus (`static/js/campus_bg.js` on a fixed `<canvas data-campus>`, class `campus-bg`): original 8×13 sprites drawn from text maps with random hair, skin, uniform (mostly white polo, some navy and yellow PE shirts), skirt or pants and backpack colours, two walking frames plus a standing one (some stop for a few seconds). Farther ones (higher up) are smaller, slower and fainter; count scales with the window (18 to 46). They interact: students who meet may stop and chat (pixel speech bubbles: typing dots, HA, ?, !, a heart) or wave and say hi; some walk with a friend, small groups stand and talk then split up, and a few run. Chats, groups and friends play short scripted conversations in text bubbles (`DIALOGUES`, e.g. "Can I copy your assignment?" / "No." / "Libre kita lunch!" / "...Fine."), and runners shout `RUN_LINES` ("I'm late!", "Gotta go fast!"). Students are drawn at `FADE` (55%) opacity but text bubbles stay solid so they're readable. Easter egg: every 25 to 50 s a student near the front turns to face the screen and talks to the viewer (eyes follow the mouse; lines in `LINES`); `/login/#psst` calls one within 2 s. Clicking a student (not the card or a control) makes them hop and react; every 6th poke the front-facing kid answers back. A still frame under `prefers-reduced-motion`. The login error texts are in `forms.LoginForm`.
+- To check a layout, take screenshots at 1280 px and 390 px wide. A Playwright script that drives the installed Microsoft Edge (`channel="msedge"`) works without downloading a browser. Keep Playwright out of `requirements.txt`.
+
+## Environment and gotchas
+
+- **Settings in `.env`** (see `.env.example`):
+  - `DATABASE_URL`, with `?sslmode=require`.
+  - `CLOUDINARY_*`.
+  - `EMAIL_*` and `DEFAULT_FROM_EMAIL`. The sender must be a sender verified in Brevo, not the `@smtp-brevo.com` login.
+  - `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`.
+  - `ADMIN_URL`, `SITE_URL` and `SEED_DEMO_PASSWORD`.
+- **The Django admin is hidden.** It is only mounted at `ADMIN_URL` (a random path), is for superusers only, and nothing links to it. Daily admin work happens on the portal's Accounts and Departments pages. Without `ADMIN_URL`, the Django admin is switched off.
+- **Aiven: few connection slots, it closes idle ones, and it's far away (~100 ms per query from the dev PC, ~0.8 s to open a TLS connection).** So the database uses a **psycopg connection pool** (`OPTIONS["pool"]` in settings, `psycopg-pool` in requirements): `min_size` 1, `max_size` `DB_POOL_MAX` (4) per server process, `max_idle` 120 s, and `CONN_HEALTH_CHECKS` makes the pool check a connection before handing it out. Pooling needs `CONN_MAX_AGE = 0` (settings force it). The cap also stops `runserver`'s thread-per-request from filling Aiven's slots ("remaining connection slots are reserved..."). `DB_POOL=False` turns it off. Keep workers × `DB_POOL_MAX` well under the plan's limit. **When deploying, put the app in the same region as the Aiven database**: that's worth more than any code change.
+- **Performance habits:** sessions are `cached_db` (memory cache first). Pages that use the approval log several times call `req.with_logs()` (one query, shared by the tracker, history and slip; `last_log` and `rejected_from` read the cache). Lists that render trackers prefetch `logs`. The Departments page builds the Program Head dropdown once (`AssignHeadForm.shared_choices`). Watch for one-query-per-row whenever a list renders a form or a related object.
+- **Security:**
+  - Django 6's **Content Security Policy** (`SECURE_CSP` + `ContentSecurityPolicyMiddleware`): scripts only from this site and cdn.jsdelivr.net, fonts from Google Fonts. **No inline `<script>` or `on*=""` handlers**; put behaviour in `static/js/app.js` (e.g. `img[data-remove-if-missing]`). Inline `style=""` is allowed. `upload_file` is exempt (`@csp_override({})`) so the PDF viewer works. Adding a new CDN means adding it to `SECURE_CSP`.
+  - **Login limit** (`forms.LoginForm`): 5 wrong passwords per username within 15 minutes pauses that account's login for the rest of the window ("Too many wrong passwords…"); a right password resets it. Counted per username, not IP (a hosting proxy can give everyone one IP), in the cache, which is per process, so it's approximate with several workers.
+  - Help text isn't marked safe in `field.html`; use `format_html` for help text with a link.
+  - Every `next` redirect goes through `views.safe_next`.
+- **Static files in production** use WhiteNoise's `CompressedManifestStaticFilesStorage` (hashed names, gzip/brotli, cached a year), so **deploys must run `python manage.py collectstatic --noinput`**. `django.contrib.staticfiles` is listed before `cloudinary_storage` in `INSTALLED_APPS` so Django's own `collectstatic` runs (Cloudinary's replacement breaks on Django 6). Tests force the plain storage (`settings_test`).
+- **Aiven has no `postgres` database by default.** An empty one was created because Django's test runner needs it. If the tests fail at teardown, check that it still exists.
+- **Brevo rejects logins from IP addresses that aren't authorised** (`525 5.7.1 Unauthorized IP address`). IP blocking is switched off for SMTP keys (Brevo → Security → Authorized IPs → "Deactivate for SMTP keys") so any host can send; if the error comes back, check that it's still off. A mail failure is only logged and never blocks a request.
+- **Cloudinary refuses signed delivery links for authenticated raw files (PDFs).** That's why the storage uses `private_download_url` (the API download endpoint) for every file.
+- **Timezone:** `Asia/Manila` (`TIME_ZONE` in `.env`). The reference number takes its year from the local date.

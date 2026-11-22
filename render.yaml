@@ -1,0 +1,47 @@
+# Render Blueprint for Quik RE-ID (one web service; the database is on Aiven, uploads on Cloudinary).
+# In Render: New > Blueprint > pick this repo. Fill in the values marked "sync: false" when asked.
+services:
+  - type: web
+    name: quik-re-id
+    runtime: python
+    plan: free
+    # Put the app in the same region as the Aiven database (see the Aiven console); it matters more than any code change.
+    region: singapore
+    buildCommand: >-
+      pip install -r requirements.txt &&
+      python manage.py collectstatic --noinput &&
+      python manage.py migrate --noinput
+    # 2 workers x DB_POOL_MAX (4) = at most 8 connections to Aiven.
+    startCommand: gunicorn config.wsgi:application --workers 2 --threads 4 --timeout 60 --access-logfile -
+    healthCheckPath: /login/
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13"
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: TIME_ZONE
+        value: Asia/Manila
+      - key: DATABASE_URL
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: EMAIL_HOST
+        value: smtp-relay.brevo.com
+      - key: EMAIL_PORT
+        value: "587"
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false
+      - key: SITE_URL
+        sync: false
+      - key: ADMIN_URL
+        sync: false

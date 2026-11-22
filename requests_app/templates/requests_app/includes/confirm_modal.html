@@ -1,0 +1,38 @@
+{% comment %}
+A confirmation modal. Title is the question, body says what happens next.
+
+  id      modal id
+  title   the question
+  body    what will happen
+  verb    label of the action button
+  danger  true for red (Reject, Cancel request)
+  dismiss label of the secondary button (default "Cancel")
+
+Either:
+  action  URL to POST to (the modal holds its own form, with optional `next`)
+or:
+  form_id id of a form on the page that has data-confirm="#<id>"; the action button submits it.
+{% endcomment %}
+<div class="modal fade text-start" id="{{ id }}" tabindex="-1" aria-labelledby="{{ id }}-label" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      {% if not form_id %}<form method="post" action="{{ action }}" data-once>{% csrf_token %}{% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}{% endif %}
+      <div class="modal-header">
+        <h2 class="modal-title fs-5" id="{{ id }}-label">{{ title }}</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-0">{{ body }}</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ dismiss|default:"Cancel" }}</button>
+        {% if form_id %}
+          <button type="button" class="btn {% if danger %}btn-danger{% else %}btn-primary{% endif %}" data-confirm-for="{{ form_id }}">{{ verb }}</button>
+        {% else %}
+          <button type="submit" class="btn {% if danger %}btn-danger{% else %}btn-primary{% endif %}">{{ verb }}</button>
+        {% endif %}
+      </div>
+      {% if not form_id %}</form>{% endif %}
+    </div>
+  </div>
+</div>

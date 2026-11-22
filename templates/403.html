@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}No access · Quik RE-ID{% endblock %}
+{% block content %}
+<div class="auth auth-wide">
+  <div class="panel">
+    <div class="panel-body roomy" style="text-align:center">
+      <h1>You don't have access to this page</h1>
+      <p class="lead">Your account's role doesn't allow it. If you think this is a mistake, contact the Admin.</p>
+      <a href="{% url 'home' %}" class="btn btn-primary">Go to my home page</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

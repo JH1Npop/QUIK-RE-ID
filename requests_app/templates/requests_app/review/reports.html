@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% load portal %}
+{% block title %}Reports · Quik RE-ID{% endblock %}
+{% block content %}
+<section class="student-strip staff-strip">
+  <div class="strip-who">
+    <div class="strip-label">OSAS · Reports</div>
+    <div class="strip-hello">Replacement requests</div>
+  </div>
+  <dl class="strip-stats strip-stats-4">
+    <div><dt>In total</dt><dd>{{ total }}</dd></div>
+    <div><dt>Open now</dt><dd>{{ open_count }}</dd></div>
+    <div><dt>Released</dt><dd>{{ released_count }}</dd></div>
+    <div><dt>Avg. days to release</dt><dd>{% if avg_days is not None %}{{ avg_days }}{% else %}—{% endif %}</dd></div>
+  </dl>
+</section>
+
+<section class="panel req-sheet">
+  <div class="sheet-top">
+    <div class="chart-head">
+      <div>
+        <div class="sheet-title">Requests per month</div>
+        <div class="chart-sub">{{ month_total }} in the last 12 months</div>
+      </div>
+    </div>
+    <div class="col-chart" role="img" aria-label="Requests per month for the last 12 months. Use Show as table for the numbers.">
+      {% for m in months %}
+        <div class="col" tabindex="0" data-tip="{{ m.label }}: {{ m.count }} request{{ m.count|pluralize }}">
+          <div class="col-plot">
+            {% if m.count and m.count == month_max or forloop.last %}<span class="col-value">{{ m.count }}</span>{% endif %}
+            <div class="col-bar{% if not m.count %} col-zero{% endif %}" style="height: {% percent m.count month_max %}%"></div>
+          </div>
+          <div class="col-label">{{ m.label|slice:":3" }}{% if forloop.first or m.label|slice:":3" == "Jan" %}<span>{{ m.label|slice:"4:" }}</span>{% endif %}</div>
+        </div>
+      {% endfor %}
+    </div>
+    <details class="chart-table">
+      <summary>Show as table</summary>
+      <table class="data-table">
+        <thead><tr><th>Month</th><th class="right">Requests</th></tr></thead>
+        <tbody>{% for m in months %}<tr><td>{{ m.label }}</td><td class="right">{{ m.count }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </details>
+  </div>
+  <div class="sheet-grid">
+    <div class="sheet-main">
+      <div class="sheet-sec">
+        <div class="sheet-title">By department</div>
+        <table class="data-table stack dept-report">
+          <thead><tr><th>Department</th><th>Requests</th><th class="right">Open</th><th class="right">Released</th></tr></thead>
+          <tbody>
+          {% for d in by_dept %}
+            <tr>
+              <td class="strong">{{ d.name }}</td>
+              <td data-label="Requests"><div class="inline-bar" title="{{ d.total }} request{{ d.total|pluralize }}">
+                <div class="bar-track"><div class="bar" style="width: {% percent d.total dept_max %}%"></div></div>
+                <span class="count">{{ d.total }}</span>
+              </div></td>
+              <td class="right" data-label="Open">{{ d.open }}</td>
+              <td class="right" data-label="Released">{{ d.released }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="4" class="muted">No departments yet.</td></tr>
+          {% endfor %}
+          {% if no_dept %}<tr><td class="muted">No department</td><td data-label="Requests"><span class="count strong">{{ no_dept }}</span></td><td class="hide-sm"></td><td class="hide-sm"></td></tr>{% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="sheet-side">
+      <div class="sheet-sec">
+        <div class="sheet-title">By status</div>
+        <ul class="status-list">
+          {% for s in status_rows %}
+            <li class="{% if not s.count %}is-zero{% endif %}"><span class="{{ s.badge }}">{{ s.label }}</span><span class="count">{{ s.count }}</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

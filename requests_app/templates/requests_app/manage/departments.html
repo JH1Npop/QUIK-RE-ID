@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Departments · Quik RE-ID{% endblock %}
+{% block content %}
+<section class="student-strip staff-strip">
+  <div class="strip-who">
+    <div class="strip-label">Admin</div>
+    <div class="strip-hello">Departments</div>
+  </div>
+  <dl class="strip-stats">
+    <div><dt>Departments</dt><dd>{{ count_active }}</dd></div>
+    <div><dt>No Program Head</dt><dd>{{ unassigned }}</dd></div>
+  </dl>
+</section>
+
+{% if unassigned and not archived %}
+  <div class="callout callout-warning">
+    <div><span class="strong">{{ unassigned }} department{{ unassigned|pluralize }} without a Program Head.</span> Requests from {{ unassigned|pluralize:"its,their" }} students wait at Submitted until you assign one.</div>
+  </div>
+{% endif %}
+
+<section class="panel">
+  <div class="toolbar tabs-bar">
+    <nav class="tabs" aria-label="Department lists">
+      <a href="{% url 'manage_departments' %}" class="{% if not archived %}active{% endif %}">Active</a>
+      <a href="{% url 'manage_departments' %}?show=archived" class="{% if archived %}active{% endif %}">Archived <span class="tab-count">{{ count_off }}</span></a>
+    </nav>
+  </div>
+  {% if archived %}
+    <div class="archive-note">Students can't choose these when they sign up. Their students and requests stay as they are.</div>
+  {% endif %}
+  <div class="table-wrap">
+    <table class="data-table stack dept-table">
+      <thead><tr><th>Department</th><th class="num">Students</th><th class="num">Open requests</th><th>Program Head</th></tr></thead>
+      <tbody>
+      {% for dept, form in rows %}
+        <tr class="{% if not dept.program_head_id %}row-warn{% endif %}">
+          <td><div class="dept-name">
+            <span class="strong">{{ dept.name }}</span>
+            <span class="name-btns">
+            <button type="button" class="btn btn-quiet btn-xs" data-bs-toggle="modal" data-bs-target="#rename-{{ dept.pk }}">Rename</button>
+            {% if archived %}<button type="button" class="btn btn-quiet btn-xs" data-bs-toggle="modal" data-bs-target="#reactivate-{{ dept.pk }}">Reactivate</button>
+            {% else %}<button type="button" class="btn btn-danger-quiet btn-xs" data-bs-toggle="modal" data-bs-target="#archive-{{ dept.pk }}">Archive</button>{% endif %}
+            </span>
+          </div></td>
+          <td class="num" data-label="Students">{{ dept.students }}</td>
+          <td class="num" data-label="Open requests">{{ dept.open_requests }}</td>
+          <td data-label="Program Head">
+            <form method="post" action="{% url 'manage_assign_head' dept.pk %}" id="head-form-{{ dept.pk }}"
+                  data-confirm="#head-confirm-{{ dept.pk }}" class="inline-form">
+              {% csrf_token %}
+              {{ form.program_head }}
+              <button type="submit" class="btn btn-quiet">Save</button>
+            </form>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4"><div class="empty">{% if archived %}No archived departments.{% else %}No departments yet.{% endif %}</div></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if not archived %}
+<section class="panel add-dept">
+  <div class="panel-head">Add a department</div>
+  <div class="panel-body">
+    <form method="post" action="{% url 'manage_department_add' %}" id="dept-form" data-confirm="#dept-confirm" class="inline-form">
+      {% csrf_token %}
+      <input type="text" name="name" maxlength="150" class="form-control" placeholder="e.g. College of Computer Studies" aria-label="Department name" required>
+      <button type="submit" class="btn btn-primary nowrap">Add department</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+
+{% for dept, form in rows %}
+  {% with mid=dept.pk|stringformat:"d" %}
+  {% with fid="head-form-"|add:mid body="They review requests from students in "|add:dept.name|add:"." %}
+  {% include "requests_app/includes/confirm_modal.html" with id="head-confirm-"|add:mid form_id=fid title="Change this department's Program Head?" body=body verb="Save" %}
+  {% endwith %}
+  {% if archived %}
+    {% url 'manage_department_reactivate' dept.pk as react_url %}
+    {% include "requests_app/includes/confirm_modal.html" with id="reactivate-"|add:mid action=react_url title="Reactivate this department?" body="Students can choose it again when they sign up." verb="Reactivate" %}
+  {% else %}
+    {% url 'manage_department_archive' dept.pk as arch_url %}
+    {% include "requests_app/includes/confirm_modal.html" with id="archive-"|add:mid action=arch_url title="Archive this department?" body="New students can't choose it anymore. Its students, requests and Program Head stay as they are." verb="Archive" danger=True %}
+  {% endif %}
+  {% endwith %}
+  <div class="modal fade" id="rename-{{ dept.pk }}" tabindex="-1" aria-labelledby="rename-{{ dept.pk }}-label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="post" action="{% url 'manage_department_rename' dept.pk %}" data-once>
+          {% csrf_token %}
+          <div class="modal-header">
+            <h2 class="modal-title fs-5" id="rename-{{ dept.pk }}-label">Rename this department?</h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p>Students and staff see the new name everywhere right away.</p>
+            <label for="rename-name-{{ dept.pk }}" class="form-label">Department name</label>
+            <input id="rename-name-{{ dept.pk }}" type="text" name="name" value="{{ dept.name }}" maxlength="150" class="form-control" required>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">Rename</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endfor %}
+{% include "requests_app/includes/confirm_modal.html" with id="dept-confirm" form_id="dept-form" title="Add this department?" body="Students can choose it when they sign up." verb="Add department" %}
+{% endblock %}

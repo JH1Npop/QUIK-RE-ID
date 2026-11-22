@@ -1,0 +1,18 @@
+<div class="files">
+  {% for upload in req.latest_uploads %}
+    <div class="file">
+      <div class="file-info">
+        <span class="file-icon">{{ upload.extension }}</span>
+        <div>
+          <div class="file-name">{{ upload.get_kind_display }}</div>
+          <div class="small muted">Uploaded {{ upload.uploaded_at|date:"M j, Y" }}</div>
+        </div>
+      </div>
+      <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#preview-modal"
+              data-preview-url="{% url 'upload_file' upload.pk %}" data-preview-type="{% if upload.is_pdf %}pdf{% else %}image{% endif %}"
+              data-preview-title="{{ upload.get_kind_display }} · {{ req.reference_no }}">View</button>
+    </div>
+  {% empty %}
+    <p class="muted" style="margin:0">No files uploaded.</p>
+  {% endfor %}
+</div>

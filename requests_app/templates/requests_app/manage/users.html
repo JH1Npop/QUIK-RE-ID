@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Accounts · Quik RE-ID{% endblock %}
+{% block content %}
+<section class="student-strip staff-strip">
+  <div class="strip-who">
+    <div class="strip-label">Admin{% if user.title %} · {{ user.title }}{% endif %}</div>
+    <div class="strip-hello">Accounts</div>
+  </div>
+  <dl class="strip-stats">
+    <div><dt>Students</dt><dd>{{ count_students }}</dd></div>
+    <div><dt>Staff</dt><dd>{{ count_staff }}</dd></div>
+    <div><dt>Archived</dt><dd>{{ count_off }}</dd></div>
+  </dl>
+</section>
+
+<section class="panel">
+  <div class="toolbar tabs-bar">
+    <nav class="tabs" aria-label="Account lists">
+      <a href="{% url 'manage_users' %}" class="{% if not archived %}active{% endif %}">Active</a>
+      <a href="{% url 'manage_users' %}?show=archived" class="{% if archived %}active{% endif %}">Archived <span class="tab-count">{{ count_off }}</span></a>
+    </nav>
+  </div>
+  {% if archived %}
+    <div class="archive-note">Deactivated accounts are kept here with their requests and history. They can't log in. Reactivate one to move it back to Active.</div>
+  {% endif %}
+  <div class="toolbar">
+    <form method="get" class="search" role="search" style="max-width:none">
+      {% if archived %}<input type="hidden" name="show" value="archived">{% endif %}
+      <select name="role" class="form-select role-filter" aria-label="Filter by role" data-autosubmit>
+        <option value="">All roles</option>
+        {% for r in all_roles %}<option value="{{ r }}" {% if r == role %}selected{% endif %}>{{ r }}</option>{% endfor %}
+      </select>
+      <input type="search" name="q" value="{{ q }}" class="form-control" placeholder="Username, name, position or email" aria-label="Search accounts">
+      <button class="btn btn-outline-primary" type="submit">Search</button>
+      {% if q or role %}<a href="{% url 'manage_users' %}{% if archived %}?show=archived{% endif %}" class="btn btn-quiet nowrap">Clear</a>{% endif %}
+    </form>
+    <a href="{% url 'manage_staff_new' %}" class="btn btn-primary nowrap">New staff account</a>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table stack accounts-table">
+      <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Department or branch</th><th></th></tr></thead>
+      <tbody>
+      {% for u in users %}
+        <tr class="{% if not u.is_active %}row-off{% endif %}">
+          <td><div>
+            <span class="strong">{{ u.display_name }}</span>{% if u.pk == user.pk %}<span class="flag flag-you">You</span>{% endif %}
+            {% if u.title %}<span class="sub">{{ u.title }}</span>{% endif %}
+            <span class="sub">{{ u.email }}</span>
+          </div></td>
+          <td data-label="Username">{{ u.username }}</td>
+          <td data-label="Role"><div>{% for g in u.groups.all %}<span class="chip">{{ g.name }}</span>{% empty %}{% if u.is_superuser %}<span class="chip">Admin</span>{% else %}<span class="muted">—</span>{% endif %}{% endfor %}</div></td>
+          <td data-label="Department or branch"><div>
+            {% for d in u.headed_departments.all %}<span class="sub-strong">Heads {{ d.name }}</span>{% empty %}{% if u.shop %}<span class="sub-strong">{{ u.shop.name }}</span>{% else %}{{ u.department|default:"—" }}{% endif %}{% endfor %}
+          </div></td>
+          <td class="right"><div class="row-actions">
+            <a href="{% url 'manage_user_edit' u.pk %}" class="btn btn-quiet btn-sm">Edit</a>
+            {% with mid=u.pk|stringformat:"d" %}
+            {% if u.is_active and u.pk != user.pk %}
+              <button type="button" class="btn btn-danger-quiet btn-sm" data-bs-toggle="modal" data-bs-target="#deactivate-{{ u.pk }}">Deactivate</button>
+            {% elif not u.is_active %}
+              <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#reactivate-{{ u.pk }}">Reactivate</button>
+            {% endif %}
+            {% endwith %}
+          </div></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5"><div class="empty">{% if archived and not q and not role %}No archived accounts. Deactivated accounts show up here.{% else %}No accounts match.{% endif %}</div></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% for u in users %}{% with mid=u.pk|stringformat:"d" %}
+  {% if u.is_active and u.pk != user.pk %}
+    {% url 'manage_deactivate' u.pk as deactivate_url %}
+    {% if u.headed_departments.all %}
+      {% include "requests_app/includes/confirm_modal.html" with id="deactivate-"|add:mid action=deactivate_url title="Deactivate this account?" body="The user can't log in after this, and the account moves to Archived. Their departments will have no Program Head until you assign one." verb="Deactivate" danger=True %}
+    {% else %}
+      {% include "requests_app/includes/confirm_modal.html" with id="deactivate-"|add:mid action=deactivate_url title="Deactivate this account?" body="The user can't log in after this, and the account moves to Archived." verb="Deactivate" danger=True %}
+    {% endif %}
+  {% elif not u.is_active %}
+    {% url 'manage_reactivate' u.pk as reactivate_url %}
+    {% include "requests_app/includes/confirm_modal.html" with id="reactivate-"|add:mid action=reactivate_url title="Reactivate this account?" body="They can log in again with their old password, and the account moves back to Active." verb="Reactivate" %}
+  {% endif %}
+{% endwith %}{% endfor %}
+{% endblock %}

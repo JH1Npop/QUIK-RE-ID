@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}My branch · Quik RE-ID{% endblock %}
+{% block content %}
+<div class="page-narrow">
+<a href="{% url 'shop_list' %}" class="back-link">&larr; ID shop</a>
+<section class="panel form-panel">
+  <div class="form-panel-head">
+    <div class="req-hero-label">My branch</div>
+    <h1>{{ shop.name }}</h1>
+    {% if shop.location_updated_at %}<p>Last saved {{ shop.location_updated_at|date:"M j, Y g:i A" }}</p>{% endif %}
+  </div>
+  <div class="panel-body roomy">
+    {% if form.non_field_errors %}<div class="form-error">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+    <form method="post" id="branch-form" data-confirm="#branch-confirm">
+      {% csrf_token %}
+      <div class="form-section">Location</div>
+      <ol class="pin-steps">
+        <li><a href="https://www.google.com/maps/search/?api=1&amp;query={{ shop.address|default:shop.name|urlencode }}" target="_blank" rel="noopener">Open Google Maps</a> and find the branch.</li>
+        <li>Press and hold (on a phone) or click (on a computer) the exact spot to drop a pin.</li>
+        <li>Tap <b>Share</b> and <b>Copy link</b>, or copy the link from the address bar.</li>
+        <li>Paste it here.</li>
+      </ol>
+      {% include "requests_app/includes/field.html" with field=form.maps_link %}
+      {% if shop.maps_link %}
+        <p class="pin-saved">Saved pin: <a href="{{ shop.maps_url }}" target="_blank" rel="noopener">Open it in Google Maps</a> to check it.</p>
+      {% endif %}
+
+      <div class="form-section">Details for students</div>
+      <div class="form-grid">
+        <div class="full">{% include "requests_app/includes/field.html" with field=form.address %}</div>
+        <div class="full">{% include "requests_app/includes/field.html" with field=form.hours %}</div>
+      </div>
+
+      <div class="form-actions">
+        <a href="{% url 'shop_list' %}" class="btn btn-quiet">Cancel</a>
+        <button type="submit" class="btn btn-primary">Save location</button>
+      </div>
+    </form>
+  </div>
+</section>
+</div>
+{% include "requests_app/includes/confirm_modal.html" with id="branch-confirm" form_id="branch-form" title="Save this branch location?" body="Students choosing a branch see the new location, address and hours right away." verb="Save location" %}
+{% endblock %}

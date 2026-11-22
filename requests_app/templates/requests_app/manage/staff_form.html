@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}New staff account · Quik RE-ID{% endblock %}
+{% block content %}
+<div class="page-narrow">
+  <a href="{% url 'manage_users' %}" class="back-link">&larr; Accounts</a>
+  <section class="panel form-panel">
+    <div class="form-panel-head">
+      <div class="req-hero-label">Admin</div>
+      <h1>New staff account</h1>
+      <p>For Program Heads, OSAS, ID shop staff and Admins. Students sign up themselves.</p>
+    </div>
+    <div class="panel-body roomy">
+      {% if form.non_field_errors %}<div class="form-error">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+      <form method="post" id="staff-form" data-confirm="#staff-confirm">
+        {% csrf_token %}
+        <div class="form-section">Who</div>
+        <div class="form-grid name-grid">
+          <div>{% include "requests_app/includes/field.html" with field=form.honorific %}</div>
+          <div>{% include "requests_app/includes/field.html" with field=form.full_name %}</div>
+          <div class="full">{% include "requests_app/includes/field.html" with field=form.title %}</div>
+          <div class="full">{% include "requests_app/includes/field.html" with field=form.email %}</div>
+        </div>
+        <div class="form-section">Role</div>
+        <div class="form-grid">
+          <div>{% include "requests_app/includes/field.html" with field=form.role %}</div>
+          <div data-show-if="id_role" data-show-value="Program Head">{% include "requests_app/includes/field.html" with field=form.department %}</div>
+          <div data-show-if="id_role" data-show-value="ID Shop">{% include "requests_app/includes/field.html" with field=form.shop %}</div>
+        </div>
+        <div class="form-section">Login</div>
+        <div class="form-grid">
+          <div class="full">{% include "requests_app/includes/field.html" with field=form.username %}</div>
+          <div>{% include "requests_app/includes/field.html" with field=form.password1 %}</div>
+          <div>{% include "requests_app/includes/field.html" with field=form.password2 %}</div>
+        </div>
+        <div class="form-actions">
+          <a href="{% url 'manage_users' %}" class="btn btn-quiet">Cancel</a>
+          <button type="submit" class="btn btn-primary">Create account</button>
+        </div>
+      </form>
+    </div>
+  </section>
+</div>
+{% include "requests_app/includes/confirm_modal.html" with id="staff-confirm" form_id="staff-form" title="Create this staff account?" body="They can log in right away with the password you set." verb="Create account" %}
+{% endblock %}

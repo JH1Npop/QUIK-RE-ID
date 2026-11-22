@@ -1,0 +1,25 @@
+{# The DLL lanyard drawing used by static/js/lanyard.js (login card and sign-up preview). #}
+<svg class="lanyard-svg" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <!-- Simple elephant (original drawing) printed on the straps -->
+    <symbol id="elephant" viewBox="0 0 40 28">
+      <ellipse cx="23" cy="12.5" rx="13" ry="8.5"/>
+      <circle cx="10" cy="10.5" r="7"/>
+      <path d="M5.5 13 Q2 18 3.2 24.5 Q3.4 26 5 25.6 Q4.6 20 8 15.5 Z"/>
+      <rect x="13" y="17" width="4.2" height="10" rx="1.5"/>
+      <rect x="19" y="18" width="4.2" height="9" rx="1.5"/>
+      <rect x="26" y="18" width="4.2" height="9" rx="1.5"/>
+      <rect x="31.3" y="17" width="4.2" height="10" rx="1.5"/>
+      <path d="M35.5 10 Q39.5 12 38.6 17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+      <ellipse cx="13.5" cy="10.5" rx="4.6" ry="6.2" class="ear"/>
+      <path d="M6.5 15.5 Q8.5 18.5 11.5 17.5" fill="none" class="tusk" stroke-width="1.4" stroke-linecap="round"/>
+    </symbol>
+  </defs>
+  <path class="strap" fill="none"/>
+  <g class="strap-deco"></g>
+  <g class="strap-clip">
+    <rect x="-12" y="-6" width="24" height="15" rx="3"/>
+    <rect x="-8" y="-2" width="16" height="3" rx="1" class="clip-slot"/>
+    <rect x="-4" y="8" width="8" height="9" rx="2"/>
+  </g>
+</svg>
