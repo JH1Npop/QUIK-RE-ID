@@ -271,12 +271,32 @@ def _at(day, clock):
     return timezone.make_aware(datetime.combine(day, clock))
 
 
+NOON = time(12)
+
+
+def visit_period(start):
+    """'Morning' before noon, else 'Afternoon' (local time)."""
+    return "Morning" if timezone.localtime(start).time() < NOON else "Afternoon"
+
+
 def visit_label(start, end=None):
-    """'Tue, Nov 25, 9:00 AM' (+ ' to 9:15 AM'), in local time."""
-    text = dateformat.format(timezone.localtime(start), "D, M j, g:i A")
+    """'Tue, Nov 25, morning' (+ ' (8:00 AM to 12:00 PM)'), in local time."""
+    text = dateformat.format(timezone.localtime(start), "D, M j") + ", " + visit_period(start).lower()
     if end:
-        text += " to " + dateformat.format(timezone.localtime(end), "g:i A")
+        text += (" (" + dateformat.format(timezone.localtime(start), "g:i A") + " to "
+                 + dateformat.format(timezone.localtime(end), "g:i A") + ")")
     return text
+
+
+def day_halves(day, hours):
+    """A day's bookable halves from its opening hours, split at noon: [(start, end), ...].
+    A branch that opens after noon only has an afternoon; one that closes by noon only a morning."""
+    halves = []
+    if hours.opens < NOON:
+        halves.append((_at(day, hours.opens), _at(day, min(hours.closes, NOON))))
+    if hours.closes > NOON:
+        halves.append((_at(day, max(hours.opens, NOON)), _at(day, hours.closes)))
+    return halves
 
 
 def branch_takes_bookings(shop):
@@ -284,11 +304,11 @@ def branch_takes_bookings(shop):
 
 
 def visit_slots(shop, now=None, exclude=None):
-    """The branch's bookable slots, by day: [{"date", "slots": [{"start", "end", "booked", "left"}]}].
+    """The branch's bookable half-days, by day: [{"date", "slots": [{"start", "end", "period", "booked", "left"}]}].
 
-    From today for `book_days_ahead` days (today counts), skipping closed dates, days without hours and slots
-    that already started. A slot's load = waiting-to-pay requests booked inside [start, end), so changing the
-    slot length later can't hide older bookings. `exclude` = a request whose own booking doesn't count."""
+    Students book a morning or an afternoon (FR-16), not an exact time. From today for `book_days_ahead` days
+    (today counts), skipping closed dates, days without hours and halves that are already over. A half's load =
+    waiting-to-pay requests booked inside [start, end). `exclude` = a request whose own booking doesn't count."""
     now = now or timezone.now()
     hours = {h.weekday: h for h in shop.hours_set.all()}
     if not hours:
@@ -296,7 +316,6 @@ def visit_slots(shop, now=None, exclude=None):
     today = timezone.localtime(now).date()
     last = today + timedelta(days=shop.book_days_ahead - 1)
     closed = set(shop.closures.filter(date__gte=today, date__lte=last).values_list("date", flat=True))
-    step = timedelta(minutes=shop.slot_minutes)
     booked = ReplacementRequest.objects.filter(
         shop=shop, status=Status.OSAS_APPROVED, visit_at__gte=_at(today, time.min),
         visit_at__lt=_at(last + timedelta(days=1), time.min),
@@ -308,13 +327,12 @@ def visit_slots(shop, now=None, exclude=None):
     while day <= last:
         h = hours.get(day.weekday())
         if h and day not in closed:
-            slots, start, end_of_day = [], _at(day, h.opens), _at(day, h.closes)
-            while start + step <= end_of_day:
-                if start > now:
-                    n = sum(1 for b in booked if start <= b < start + step)
-                    slots.append({"start": start, "end": start + step, "booked": n,
+            slots = []
+            for start, end in day_halves(day, h):
+                if end > now:
+                    n = sum(1 for b in booked if start <= b < end)
+                    slots.append({"start": start, "end": end, "period": visit_period(start), "booked": n,
                                   "left": max(0, shop.slot_capacity - n)})
-                start += step
             if slots:
                 days.append({"date": day, "slots": slots})
         day += timedelta(days=1)
@@ -406,7 +424,7 @@ def add_closure(shop, day, note, actor):
 
 
 def bookings_outside_hours(shop, now=None):
-    """Upcoming bookings that no longer fit the branch's weekly hours (after staff change them)."""
+    """Upcoming bookings that no longer fall in the branch's open hours (after staff change them)."""
     now = now or timezone.now()
     hours = {h.weekday: h for h in shop.hours_set.all()}
     count = 0
@@ -414,7 +432,6 @@ def bookings_outside_hours(shop, now=None):
             .values_list("visit_at", flat=True):
         local = timezone.localtime(at)
         h = hours.get(local.weekday())
-        if h is None or not (h.opens <= local.time() and local + timedelta(minutes=shop.slot_minutes)
-                             <= _at(local.date(), h.closes)):
+        if h is None or not any(start <= at < end for start, end in day_halves(local.date(), h)):
             count += 1
     return count

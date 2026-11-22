@@ -35,7 +35,7 @@
   <ul class="visit-list">
     {% for v in visits %}
       <li class="{% if v.visit_missed %}is-missed{% endif %}">
-        <span class="visit-time">{{ v.visit_at|date:"g:i A" }}</span>
+        <span class="visit-time">{{ v.visit_period }}</span>
         <a href="{% url 'shop_detail' v.pk %}" class="strong">{{ v.student.full_name|default:v.student.username }}</a>
         <span class="muted">{{ v.reference_no }}</span>
         {% if v.visit_missed %}<span class="flag">Missed</span>{% endif %}

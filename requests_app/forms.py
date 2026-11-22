@@ -591,20 +591,16 @@ class ForgotPasswordForm(BootstrapMixin, PasswordResetForm):
 # ---------------------------------------------------------------- visit calendar (FR-16)
 
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-SLOT_LENGTHS = [(10, "10 minutes"), (15, "15 minutes"), (20, "20 minutes"), (30, "30 minutes"), (45, "45 minutes"),
-                (60, "1 hour")]
-
-
 class CalendarForm(BootstrapMixin, forms.Form):
-    """A branch's visit calendar: weekly hours (one range a day), slot length, students per slot, booking window."""
-    slot_minutes = forms.TypedChoiceField(label="Minutes per slot", choices=SLOT_LENGTHS, coerce=int)
-    slot_capacity = forms.IntegerField(label="Students per slot", min_value=1, max_value=50)
+    """A branch's visit calendar: weekly hours (one range a day, split into morning and afternoon at noon),
+    students per morning or afternoon, and how many days ahead students can book."""
+    slot_capacity = forms.IntegerField(label="Students per morning or afternoon", min_value=1, max_value=500)
     book_days_ahead = forms.IntegerField(label="Days students can book ahead", min_value=1, max_value=60,
                                          help_text="Today counts as the first day.")
 
     def __init__(self, *args, shop, **kwargs):
         hours = {h.weekday: h for h in shop.hours_set.all()}
-        initial = {"slot_minutes": shop.slot_minutes, "slot_capacity": shop.slot_capacity,
+        initial = {"slot_capacity": shop.slot_capacity,
                    "book_days_ahead": shop.book_days_ahead}
         for i in range(7):
             h = hours.get(i)
@@ -627,23 +623,21 @@ class CalendarForm(BootstrapMixin, forms.Form):
 
     def clean(self):
         data = super().clean()
-        minutes = data.get("slot_minutes") or 15
         for i, name in enumerate(WEEKDAYS):
             if not data.get(f"open_{i}"):
                 continue
             opens, closes = data.get(f"opens_{i}"), data.get(f"closes_{i}")
             if not opens or not closes:
                 self.add_error(f"opens_{i}", f"Set when {name} opens and closes, or untick it.")
-            elif (closes.hour * 60 + closes.minute) - (opens.hour * 60 + opens.minute) < minutes:
-                self.add_error(f"closes_{i}", f"{name} closes before one slot fits.")
+            elif closes <= opens:
+                self.add_error(f"closes_{i}", f"{name} closes before it opens.")
         return data
 
     def save(self):
         shop = self.shop
-        shop.slot_minutes = self.cleaned_data["slot_minutes"]
         shop.slot_capacity = self.cleaned_data["slot_capacity"]
         shop.book_days_ahead = self.cleaned_data["book_days_ahead"]
-        shop.save(update_fields=["slot_minutes", "slot_capacity", "book_days_ahead"])
+        shop.save(update_fields=["slot_capacity", "book_days_ahead"])
         BranchHours.objects.filter(shop=shop).delete()
         BranchHours.objects.bulk_create([
             BranchHours(shop=shop, weekday=i, opens=self.cleaned_data[f"opens_{i}"], closes=self.cleaned_data[f"closes_{i}"])

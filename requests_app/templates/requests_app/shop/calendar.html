@@ -7,7 +7,7 @@
   <div class="form-panel-head">
     <div class="req-hero-label">Visit calendar</div>
     <h1>{{ shop.name }}</h1>
-    <p>Students book a photo visit in these slots once OSAS approves. Booking is optional; walk-ins are still served.</p>
+    <p>Students book a morning or afternoon visit once OSAS approves. Mornings end at noon. Booking is optional; walk-ins are still served.</p>
   </div>
   <div class="panel-body roomy">
     {% if form.non_field_errors %}<div class="form-error">{{ form.non_field_errors|join:" " }}</div>{% endif %}
@@ -26,9 +26,8 @@
       </div>
       <p class="form-hint">Tick the days you take visits. One time range a day.</p>
 
-      <div class="form-section">Slots</div>
-      <div class="form-grid form-grid-3">
-        <div>{% include "requests_app/includes/field.html" with field=form.slot_minutes %}</div>
+      <div class="form-section">Bookings</div>
+      <div class="form-grid">
         <div>{% include "requests_app/includes/field.html" with field=form.slot_capacity %}</div>
         <div>{% include "requests_app/includes/field.html" with field=form.book_days_ahead %}</div>
       </div>
@@ -65,25 +64,25 @@
 </section>
 
 <section class="panel">
-  <div class="panel-head">Upcoming slots <span class="muted small">Booked out of {{ shop.slot_capacity }} per slot</span></div>
+  <div class="panel-head">Upcoming visits <span class="muted small">Booked out of {{ shop.slot_capacity }} per morning or afternoon</span></div>
   <div class="panel-body">
     {% for day in preview %}
       <details class="slot-day"{% if forloop.first %} open{% endif %}>
         <summary class="slot-day-name">{{ day.date|date:"l, M j" }}</summary>
         <div class="slot-grid">
           {% for s in day.slots %}
-            <span class="slot-chip{% if not s.left %} is-full{% elif s.booked %} is-some{% endif %}">{{ s.start|date:"g:i A" }} <small>{{ s.booked }}/{{ shop.slot_capacity }}</small></span>
+            <span class="slot-chip{% if not s.left %} is-full{% elif s.booked %} is-some{% endif %}">{{ s.period }} <small>{{ s.start|date:"g:i A" }} to {{ s.end|date:"g:i A" }} · {{ s.booked }}/{{ shop.slot_capacity }}</small></span>
           {% endfor %}
         </div>
       </details>
     {% empty %}
-      <p class="muted">No slots yet. Tick at least one day above and save; students then see the times when they book.</p>
+      <p class="muted">Nothing to book yet. Tick at least one day above and save; students then see those days when they book.</p>
     {% endfor %}
   </div>
 </section>
 </div>
 
-{% include "requests_app/includes/confirm_modal.html" with id="calendar-confirm" form_id="calendar-form" title="Save the visit calendar?" body="Students see the new times right away. Visits already booked stay booked." verb="Save calendar" %}
+{% include "requests_app/includes/confirm_modal.html" with id="calendar-confirm" form_id="calendar-form" title="Save the visit calendar?" body="Students see the new days right away. Visits already booked stay booked." verb="Save calendar" %}
 {% include "requests_app/includes/confirm_modal.html" with id="closure-confirm" form_id="closure-form" title="Close the branch that day?" body="Visits booked that day are cleared, and those students are emailed to pick a new time." verb="Add closed date" danger=True %}
 {% for c in closures %}
   {% url 'shop_closure_remove' c.pk as remove_url %}

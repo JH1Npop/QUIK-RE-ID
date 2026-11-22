@@ -91,11 +91,9 @@ class IdShop(models.Model):
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True,
                                     validators=[MinValueValidator(Decimal("-180")), MaxValueValidator(Decimal("180"))])
     location_updated_at = models.DateTimeField(null=True, blank=True, editable=False)
-    # Visit calendar (FR-16): students book a photo visit in these slots. No weekly hours = walk-in only.
-    slot_minutes = models.PositiveSmallIntegerField("Minutes per slot", default=15,
-                                                    validators=[MinValueValidator(5), MaxValueValidator(240)])
-    slot_capacity = models.PositiveSmallIntegerField("Students per slot", default=3,
-                                                     validators=[MinValueValidator(1), MaxValueValidator(50)])
+    # Visit calendar (FR-16): students book a morning or afternoon visit. No weekly hours = walk-in only.
+    slot_capacity = models.PositiveSmallIntegerField("Students per morning or afternoon", default=20,
+                                                     validators=[MinValueValidator(1), MaxValueValidator(500)])
     book_days_ahead = models.PositiveSmallIntegerField("Days students can book ahead", default=7,
                                                        validators=[MinValueValidator(1), MaxValueValidator(60)])
 
@@ -258,10 +256,25 @@ class ReplacementRequest(models.Model):
 
     # Visit booking (FR-16): only matters while the request waits for the fee (OSAS approved).
     @property
+    def visit_period(self):
+        """'Morning' or 'Afternoon' for the booked visit."""
+        if not self.visit_at:
+            return ""
+        return "Morning" if timezone.localtime(self.visit_at).hour < 12 else "Afternoon"
+
+    @property
     def visit_end(self):
+        """When the booked half-day ends: noon for a morning, closing time for an afternoon."""
         if not (self.visit_at and self.shop_id):
             return None
-        return self.visit_at + timedelta(minutes=self.shop.slot_minutes)
+        local = timezone.localtime(self.visit_at)
+        hours = self.shop.hours_set.filter(weekday=local.weekday()).first()
+        closes = (local.replace(hour=hours.closes.hour, minute=hours.closes.minute, second=0, microsecond=0)
+                  if hours else None)
+        noon = local.replace(hour=12, minute=0, second=0, microsecond=0)
+        if local.hour < 12:
+            return min(noon, closes) if closes and closes > local else noon
+        return closes if closes and closes > local else local + timedelta(hours=4)
 
     @property
     def visit_missed(self):

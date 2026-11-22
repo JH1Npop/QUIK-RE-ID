@@ -161,8 +161,8 @@ def shop_calendar(request):
         form.save()
         open_days = [name for name, box, _o, _c in form.days() if form.cleaned_data.get(box.name)]
         audit.record(AuditLog.Kind.BRANCH, "Updated visit calendar",
-                     f"{shop.name}: {', '.join(open_days) or 'no days'}; {shop.slot_minutes} min slots, "
-                     f"{shop.slot_capacity} per slot, {shop.book_days_ahead} days ahead")
+                     f"{shop.name}: {', '.join(open_days) or 'no days'}; {shop.slot_capacity} per morning or "
+                     f"afternoon, {shop.book_days_ahead} days ahead")
         messages.success(request, "Calendar saved")
         outside = services.bookings_outside_hours(shop)
         if outside:

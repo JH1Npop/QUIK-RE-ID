@@ -55,7 +55,7 @@
         <div class="wide"><dt>Department</dt><dd>{{ req.student.department|default:"No department" }}</dd></div>
         <div><dt>ID lost on</dt><dd>{{ req.date_lost|date:"M j, Y" }}</dd></div>
         <div><dt>Request filed</dt><dd>{{ req.created_at|date:"M j, Y" }}</dd></div>
-        {% if req.visit_upcoming %}<div class="wide"><dt>Visit booked</dt><dd>{{ req.visit_at|date:"D, M j, Y g:i A" }}</dd></div>{% endif %}
+        {% if req.visit_upcoming %}<div class="wide"><dt>Visit booked</dt><dd>{{ req.visit_at|date:"D, M j, Y" }}, {{ req.visit_period|lower }}</dd></div>{% endif %}
         {% if req.shop %}<div class="wide"><dt>ID shop branch</dt><dd>{{ req.shop.name }}{% if req.shop.address %}<br><small>{{ req.shop.address }}</small>{% endif %}</dd></div>{% endif %}
       </dl>
 

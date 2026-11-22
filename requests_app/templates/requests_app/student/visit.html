@@ -6,9 +6,9 @@
       {% if req.visit_upcoming %}
         <div class="visit-booked">Booked: <b>{{ visit_label }}</b> at {{ req.shop.name }}</div>
       {% elif req.visit_missed %}
-        <div class="visit-missed">You missed your visit ({{ visit_label }}). Pick a new time, or walk in during open hours.</div>
+        <div class="visit-missed">You missed your visit ({{ visit_label }}). Pick a new day, or walk in during open hours.</div>
       {% else %}
-        <p class="muted visit-intro">Optional: book a time for your photo at {{ req.shop.name }} so you don't wait. You can also walk in during open hours.</p>
+        <p class="muted visit-intro">Optional: book a morning or afternoon for your photo at {{ req.shop.name }} so you don't wait. You can also walk in during open hours.</p>
       {% endif %}
     </div>
     {% if req.visit_upcoming %}
@@ -17,7 +17,7 @@
   </div>
 
   {% if visit_days %}
-    {% if req.visit_upcoming %}<details class="visit-change"><summary>Change the time</summary>{% endif %}
+    {% if req.visit_upcoming %}<details class="visit-change"><summary>Change the day</summary>{% endif %}
     <form method="post" action="{% url 'student_visit' req.pk %}" id="visit-form" data-confirm="#visit-confirm">
       {% csrf_token %}
       {% for day in visit_days %}
@@ -27,22 +27,22 @@
             {% for s in day.slots %}
               <label class="slot-pill{% if not s.left %} is-full{% endif %}">
                 <input type="radio" name="slot" value="{{ s.start|date:'c' }}" required{% if not s.left %} disabled{% endif %}>
-                <span>{{ s.start|date:"g:i A" }}</span>
-                <small>{% if s.left %}{{ s.left }} left{% else %}Full{% endif %}</small>
+                <span>{{ s.period }}</span>
+                <small>{{ s.start|date:"g:i A" }} to {{ s.end|date:"g:i A" }} · {% if s.left %}{{ s.left }} left{% else %}Full{% endif %}</small>
               </label>
             {% endfor %}
           </div>
         </details>
       {% endfor %}
-      <button type="submit" class="btn btn-primary visit-submit">{% if req.visit_at %}Move my visit{% else %}Book this time{% endif %}</button>
+      <button type="submit" class="btn btn-primary visit-submit">{% if req.visit_at %}Move my visit{% else %}Book this visit{% endif %}</button>
     </form>
     {% if req.visit_upcoming %}</details>{% endif %}
   {% else %}
-    <p class="muted visit-intro">No open times in the next {{ req.shop.book_days_ahead }} day{{ req.shop.book_days_ahead|pluralize }}. Walk in during open hours, or check again later.</p>
+    <p class="muted visit-intro">No open days in the next {{ req.shop.book_days_ahead }} day{{ req.shop.book_days_ahead|pluralize }}. Walk in during open hours, or check again later.</p>
   {% endif %}
 </div>
-{% include "requests_app/includes/confirm_modal.html" with id="visit-confirm" form_id="visit-form" title="Book this visit time?" body="The ID shop expects you then. You can change it until you pay." verb="Book visit" %}
+{% include "requests_app/includes/confirm_modal.html" with id="visit-confirm" form_id="visit-form" title="Book this visit?" body="Come to the ID shop any time in that morning or afternoon. You can change it until you pay." verb="Book visit" %}
 {% if req.visit_upcoming %}
   {% url 'student_visit_cancel' req.pk as cancel_visit_url %}
-  {% include "requests_app/includes/confirm_modal.html" with id="visit-cancel" action=cancel_visit_url title="Cancel your visit?" body="Your time frees up for someone else. You can book again or walk in." verb="Cancel visit" danger=True dismiss="Keep visit" %}
+  {% include "requests_app/includes/confirm_modal.html" with id="visit-cancel" action=cancel_visit_url title="Cancel your visit?" body="Your place frees up for someone else. You can book again or walk in." verb="Cancel visit" danger=True dismiss="Keep visit" %}
 {% endif %}

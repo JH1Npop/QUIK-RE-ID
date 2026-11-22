@@ -1246,12 +1246,12 @@ class ActivityLogTests(PortalTestCase):
 
 
 class VisitCalendarTests(PortalTestCase):
-    """FR-16: students book a photo visit in the branch's slots; the branch sets the calendar."""
+    """FR-16: students book a morning or afternoon visit at their branch; the branch sets the calendar."""
 
     @classmethod
     def setUpTestData(cls):
         super().setUpTestData()
-        cls.main = IdShop.objects.create(name="Main campus", slot_minutes=15, slot_capacity=2, book_days_ahead=2)
+        cls.main = IdShop.objects.create(name="Main campus", slot_capacity=2, book_days_ahead=2)
         cls.annex = IdShop.objects.create(name="Annex")
         cls.shop.shop = cls.main
         cls.shop.save()
@@ -1261,12 +1261,12 @@ class VisitCalendarTests(PortalTestCase):
 
     def setUp(self):
         super().setUp()
-        # Monday Nov 23, 2026, 9:05 AM (Manila). Main campus takes visits on Mondays, 9:00 to 10:00 only.
+        # Monday Nov 23, 2026, 9:05 AM (Manila). Main campus is open Mondays 8:00 AM to 5:00 PM.
         self.now = timezone.make_aware(datetime(2026, 11, 23, 9, 5))
-        BranchHours.objects.create(shop=self.main, weekday=0, opens=dt_time(9), closes=dt_time(10))
+        BranchHours.objects.create(shop=self.main, weekday=0, opens=dt_time(8), closes=dt_time(17))
 
-    def at(self, h, m):
-        return timezone.make_aware(datetime(2026, 11, 23, h, m))
+    def at(self, h, m=0, day=23):
+        return timezone.make_aware(datetime(2026, 11, day, h, m))
 
     def approved(self, student=None, shop=None):
         req = self.make_request(student=student, status=Status.OSAS_APPROVED)
@@ -1274,26 +1274,35 @@ class VisitCalendarTests(PortalTestCase):
         req.refresh_from_db()
         return req
 
-    def test_slots_follow_the_branch_calendar(self):
+    def test_days_split_into_morning_and_afternoon(self):
         days = services.visit_slots(self.main, self.now)
         self.assertEqual(len(days), 1)   # Tuesday (inside the 2-day window) has no hours
-        self.assertEqual([s["start"] for s in days[0]["slots"]], [self.at(9, 15), self.at(9, 30), self.at(9, 45)])
+        slots = days[0]["slots"]
+        self.assertEqual([s["period"] for s in slots], ["Morning", "Afternoon"])
+        self.assertEqual([(s["start"], s["end"]) for s in slots],
+                         [(self.at(8), self.at(12)), (self.at(12), self.at(17))])   # this morning is still bookable
+        self.assertEqual(services.visit_slots(self.main, self.at(12, 30))[0]["slots"][0]["period"], "Afternoon")
+        BranchHours.objects.create(shop=self.main, weekday=1, opens=dt_time(13), closes=dt_time(17))
+        tuesday = services.visit_slots(self.main, self.now)[1]["slots"]
+        self.assertEqual([(s["period"], s["start"]) for s in tuesday], [("Afternoon", self.at(13, day=24))])
         services.add_closure(self.main, self.now.date(), "Holiday", self.shop)
-        self.assertEqual(services.visit_slots(self.main, self.now), [])
+        self.assertEqual([d["date"] for d in services.visit_slots(self.main, self.now)], [self.at(13, day=24).date()])
         self.assertEqual(services.visit_slots(self.annex, self.now), [])   # no hours = walk-in only
 
     def test_booking_respects_capacity_and_can_move(self):
         a, b, c = self.approved(), self.approved(), self.approved()
-        services.book_visit(a, self.student, self.at(9, 15), now=self.now)
-        services.book_visit(b, self.student, self.at(9, 15), now=self.now)
+        services.book_visit(a, self.student, self.at(8), now=self.now)
+        services.book_visit(b, self.student, self.at(8), now=self.now)
         with self.assertRaisesMessage(services.TransitionError, "That time is full."):
-            services.book_visit(c, self.student, self.at(9, 15), now=self.now)
+            services.book_visit(c, self.student, self.at(8), now=self.now)
         with self.assertRaisesMessage(services.TransitionError, "open anymore"):
-            services.book_visit(c, self.student, self.at(9, 0), now=self.now)   # already started
-        services.book_visit(a, self.student, self.at(9, 30), now=self.now)     # moving frees a place at 9:15
-        services.book_visit(c, self.student, self.at(9, 15), now=self.now)
-        left = {s["start"]: s["left"] for s in services.visit_slots(self.main, self.now)[0]["slots"]}
-        self.assertEqual((left[self.at(9, 15)], left[self.at(9, 30)]), (0, 1))
+            services.book_visit(c, self.student, self.at(9), now=self.now)   # not the start of a half-day
+        services.book_visit(a, self.student, self.at(12), now=self.now)     # moving frees a morning place
+        services.book_visit(c, self.student, self.at(8), now=self.now)
+        left = {s["period"]: s["left"] for s in services.visit_slots(self.main, self.now)[0]["slots"]}
+        self.assertEqual(left, {"Morning": 0, "Afternoon": 1})
+        a.refresh_from_db()
+        self.assertEqual((a.visit_period, a.visit_end), ("Afternoon", self.at(17)))
         self.assertEqual(AuditLog.objects.filter(action__in=["Booked visit", "Moved visit"]).count(), 4)
 
     def test_only_your_own_waiting_to_pay_request_can_book(self):
@@ -1301,24 +1310,25 @@ class VisitCalendarTests(PortalTestCase):
         ReplacementRequest.objects.filter(pk=req.pk).update(shop=self.main)
         req.refresh_from_db()
         with self.assertRaises(services.TransitionError):
-            services.book_visit(req, self.student, self.at(9, 15), now=self.now)
+            services.book_visit(req, self.student, self.at(8), now=self.now)
         mine = self.approved()
         with self.assertRaises(PermissionDenied):
-            services.book_visit(mine, self.other_student, self.at(9, 15), now=self.now)
+            services.book_visit(mine, self.other_student, self.at(8), now=self.now)
 
     def test_missed_visit_can_be_rebooked(self):
         req = self.approved()
-        ReplacementRequest.objects.filter(pk=req.pk).update(visit_at=timezone.now() - timedelta(hours=2))
+        yesterday_morning = timezone.localtime(timezone.now() - timedelta(days=1)).replace(hour=8, minute=0)
+        ReplacementRequest.objects.filter(pk=req.pk).update(visit_at=yesterday_morning)
         req.refresh_from_db()
         self.assertTrue(req.visit_missed)
         self.assertFalse(req.visit_upcoming)
-        services.book_visit(req, self.student, self.at(9, 45), now=self.now)
+        services.book_visit(req, self.student, self.at(12), now=self.now)
         req.refresh_from_db()
-        self.assertEqual(req.visit_at, self.at(9, 45))
+        self.assertEqual(req.visit_at, self.at(12))
 
     def test_closing_a_day_clears_its_bookings_and_emails_them(self):
         req = self.approved()
-        services.book_visit(req, self.student, self.at(9, 15), now=self.now)
+        services.book_visit(req, self.student, self.at(12), now=self.now)
         mail.outbox.clear()
         with self.captureOnCommitCallbacks(execute=True):
             cleared = services.add_closure(self.main, self.now.date(), "Holiday", self.shop)
@@ -1329,17 +1339,19 @@ class VisitCalendarTests(PortalTestCase):
 
     def test_student_books_from_their_request_page(self):
         BranchHours.objects.filter(shop=self.main).delete()
-        BranchHours.objects.bulk_create([BranchHours(shop=self.main, weekday=d, opens=dt_time(0, 0),
-                                                     closes=dt_time(23, 45)) for d in range(7)])
+        BranchHours.objects.bulk_create([BranchHours(shop=self.main, weekday=d, opens=dt_time(8),
+                                                     closes=dt_time(17)) for d in range(7)])
         req = self.approved()
         self.login(self.student)
-        self.assertContains(self.client.get(reverse("student_detail", args=[req.pk])), "Your visit")
+        page = self.client.get(reverse("student_detail", args=[req.pk]))
+        self.assertContains(page, "Your visit")
+        self.assertContains(page, "Afternoon")
         start = services.visit_slots(self.main, exclude=req.pk)[-1]["slots"][0]["start"]
         resp = self.client.post(reverse("student_visit", args=[req.pk]), {"slot": timezone.localtime(start).isoformat()})
-        self.assertTrue(any(m.startswith("Visit booked:") for m in self.messages_of(resp)))
+        self.assertTrue(any(m.startswith("Visit booked:") and "morning" in m for m in self.messages_of(resp)))
         req.refresh_from_db()
         self.assertEqual(req.visit_at, start)
-        self.assertContains(self.client.get(reverse("authorization", args=[req.pk])), "Visit booked")
+        self.assertContains(self.client.get(reverse("authorization", args=[req.pk])), "morning")
         self.client.post(reverse("student_visit_cancel", args=[req.pk]))
         req.refresh_from_db()
         self.assertIsNone(req.visit_at)
@@ -1349,15 +1361,15 @@ class VisitCalendarTests(PortalTestCase):
 
     def test_branch_staff_configure_their_own_calendar(self):
         self.login(self.shop)
-        data = {"slot_minutes": "20", "slot_capacity": "4", "book_days_ahead": "10",
-                "open_1": "on", "opens_1": "08:00", "closes_1": "12:00",
-                "open_2": "on", "opens_2": "13:00", "closes_2": "13:10"}   # too short for one 20-minute slot
-        self.assertContains(self.client.post(reverse("shop_calendar"), data), "Wednesday closes before one slot fits.")
+        data = {"slot_capacity": "40", "book_days_ahead": "10",
+                "open_1": "on", "opens_1": "08:00", "closes_1": "17:00",
+                "open_2": "on", "opens_2": "13:00", "closes_2": "12:00"}   # closes before it opens
+        self.assertContains(self.client.post(reverse("shop_calendar"), data), "Wednesday closes before it opens.")
         del data["open_2"]
         resp = self.client.post(reverse("shop_calendar"), data)
         self.assertIn("Calendar saved", self.messages_of(resp))
         self.main.refresh_from_db()
-        self.assertEqual((self.main.slot_minutes, self.main.slot_capacity, self.main.book_days_ahead), (20, 4, 10))
+        self.assertEqual((self.main.slot_capacity, self.main.book_days_ahead), (40, 10))
         self.assertEqual(list(self.main.hours_set.values_list("weekday", flat=True)), [1])
         self.client.post(reverse("shop_closure_add"), {"date": "2099-12-25", "note": "Christmas"})
         closure = self.main.closures.get()

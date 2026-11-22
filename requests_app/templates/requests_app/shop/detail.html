@@ -46,7 +46,7 @@
           <div><dt>Student ID</dt><dd>{{ req.student.username }}</dd></div>
           <div><dt>LRN</dt><dd>{{ req.student.lrn|default:"Not given" }}</dd></div>
           <div><dt>Department</dt><dd>{{ req.student.department|default:"No department" }}</dd></div>
-          {% if req.visit_at and req.status == "OSAS_APPROVED" %}<div><dt>Visit</dt><dd>{{ req.visit_at|date:"D, M j, g:i A" }}{% if req.visit_missed %} <span class="flag">Missed</span>{% endif %}</dd></div>{% endif %}
+          {% if req.visit_at and req.status == "OSAS_APPROVED" %}<div><dt>Visit</dt><dd>{{ req.visit_at|date:"D, M j" }}, {{ req.visit_period|lower }}{% if req.visit_missed %} <span class="flag">Missed</span>{% endif %}</dd></div>{% endif %}
         </dl>
       </div>
       <div class="sheet-sec">
