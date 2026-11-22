@@ -339,7 +339,14 @@ a { color: var(--primary); }
 }
 
 /* The login page fits in one screen: no bottom padding under the lanyard */
-.page:has(.login-stage) { padding-bottom: 0; }.id-logo { position: relative; width: 64px; height: 64px; flex-shrink: 0; }
+.page:has(.login-stage) { padding-bottom: 0; }
+/* Dragging the card must not resize or scroll the page (no scrollbars popping in, no navbar wiggle). */
+html:has(.login-stage) { overflow-x: hidden; }
+.page:has(.login-stage) { overflow-y: clip; }   /* a card dragged below the page doesn't make it taller */
+html.login-locked, html.login-locked body { overflow: hidden; overscroll-behavior: none; }
+body:has(.login-stage), body:has(.mini-id.grabbing) { user-select: none; -webkit-user-select: none; }   /* no text highlighting while dragging */
+body:has(.login-stage) input { user-select: text; -webkit-user-select: text; }
+.id-logo { position: relative; width: 64px; height: 64px; flex-shrink: 0; }
 .id-logo .id-seal, .id-logo img { position: absolute; inset: 0; width: 100%; height: 100%; }
 .id-logo img { object-fit: contain; pointer-events: none; }
 

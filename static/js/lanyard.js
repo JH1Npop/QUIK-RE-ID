@@ -89,6 +89,9 @@
       cardH = rawH * scale;
       drop = Math.max(MIN_DROP, Math.min(maxDrop, avail - cardH - GAP));
       stage.style.height = Math.round(drop + cardH + GAP) + "px";
+      // When the whole stage fits the window, lock the page: dragging the card past an edge then can't
+      // grow the page, show scrollbars or scroll it (which made the navbar wiggle). Short screens keep scrolling.
+      document.documentElement.classList.toggle("login-locked", top + drop + cardH + GAP <= window.innerHeight + 1);
     } else {
       scale = 1;
       cardW = rawW;
