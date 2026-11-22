@@ -484,6 +484,16 @@
   }
 
   resize();
-  window.addEventListener("resize", function () { resize(); needSort = true; last = 0; if (still) tick(0); });
+  // On phones the address bar hides and shows while scrolling, which resizes the window's height only. Then keep
+  // everyone walking and just move each student to their depth's place; only a width change starts over.
+  window.addEventListener("resize", function () {
+    if (window.innerWidth === W) {
+      H = canvas.height = window.innerHeight;
+      people.forEach(function (p) { p.y = yFor(p.depth); });
+      if (still) tick(0);
+      return;
+    }
+    resize(); needSort = true; last = 0; if (still) tick(0);
+  });
   requestAnimationFrame(tick);
 })();
