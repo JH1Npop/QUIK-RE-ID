@@ -367,3 +367,36 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"{self.receipt_no} · {self.amount}"
+
+
+class AuditLog(models.Model):
+    """Activity log (FR-18): one row per action, who did it, when and from where. Rows are never changed.
+
+    Request status changes are copied here from ApprovalLog; the rest is written with `audit.record`."""
+
+    class Kind(models.TextChoices):
+        REQUEST = "request", "Requests"
+        FILE = "file", "Files"
+        SIGN_IN = "sign_in", "Sign-in"
+        ACCOUNT = "account", "Accounts"
+        DEPARTMENT = "department", "Departments"
+        BRANCH = "branch", "ID shop branches"
+
+    kind = models.CharField(max_length=20, choices=Kind.choices, db_index=True)
+    action = models.CharField(max_length=60)
+    summary = models.CharField(max_length=300)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    request = models.ForeignKey(ReplacementRequest, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    ip = models.GenericIPAddressField("IP address", null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.created_at:%Y-%m-%d %H:%M} {self.action}: {self.summary}"
+
+    def save(self, *args, **kwargs):
+        if self.pk is not None:
+            raise ValueError("Activity log entries can't be changed.")
+        super().save(*args, **kwargs)

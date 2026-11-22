@@ -1,15 +1,17 @@
 """Admin screens: accounts (create, edit, deactivate, reactivate), departments (add, rename, Program Head)
 and ID shop branches (add, rename). Departments and branches can be archived (deactivated) and reactivated."""
 from django.contrib import messages
+from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Count, Prefetch, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from . import roles
+from . import audit, roles
 from .forms import AccountEditForm, AssignHeadForm, DepartmentForm, IdShopForm, StaffCreateForm
-from .models import Department, IdShop, ReplacementRequest, Status, User
+from .models import AuditLog, Department, IdShop, ReplacementRequest, Status, User
 
 CLOSED = (Status.RELEASED, Status.CANCELLED)
 
@@ -41,7 +43,9 @@ def manage_staff_new(request):
     form = StaffCreateForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         with transaction.atomic():
-            form.save()
+            user = form.save()
+            audit.record(AuditLog.Kind.ACCOUNT, "Created staff account",
+                         f"{user.display_name} ({user.username}), {form.cleaned_data['role']}")
         messages.success(request, "Staff account created")
         return redirect("manage_users")
     return render(request, "requests_app/manage/staff_form.html", {"form": form})
@@ -55,6 +59,11 @@ def manage_user_edit(request, pk):
         headed_before = set(account.headed_departments.values_list("name", flat=True))
         with transaction.atomic():
             form.save()
+            changes = [f"role {form.old_role} to {form.new_role}"] if form.new_role != form.old_role else []
+            if form.changed_data:
+                changes.append("changed " + ", ".join(form.changed_data).replace("_", " "))
+            audit.record(AuditLog.Kind.ACCOUNT, "Updated account",
+                         f"{account.display_name} ({account.username})" + (f": {'; '.join(changes)}" if changes else ""))
         messages.success(request, "Account updated")
         if form.new_role != form.old_role:
             messages.info(request, f"{account.display_name} is now {form.new_role}.")
@@ -84,6 +93,7 @@ def manage_deactivate(request, pk):
             # A deactivated Program Head can't review, so free their departments for someone else.
             headed = list(user.headed_departments.values_list("name", flat=True))
             user.headed_departments.update(program_head=None)
+            audit.record(AuditLog.Kind.ACCOUNT, "Deactivated account", f"{user.display_name} ({user.username})")
         messages.success(request, "Account deactivated")
         messages.info(request, f"{user.display_name} moved to Archived.")
         if headed:
@@ -101,6 +111,7 @@ def manage_reactivate(request, pk):
     else:
         user.is_active = True
         user.save(update_fields=["is_active"])
+        audit.record(AuditLog.Kind.ACCOUNT, "Reactivated account", f"{user.display_name} ({user.username})")
         messages.success(request, "Account reactivated")
     return redirect(reverse("manage_users") + "?show=archived")
 
@@ -139,6 +150,7 @@ def _set_active(request, obj, active, noun):
 def manage_department_archive(request, pk):
     dept = get_object_or_404(Department, pk=pk)
     if _set_active(request, dept, False, "department"):
+        audit.record(AuditLog.Kind.DEPARTMENT, "Archived department", dept.name)
         messages.success(request, "Department archived")
         messages.info(request, f"{dept.name} moved to Archived.")
     return redirect("manage_departments")
@@ -149,6 +161,7 @@ def manage_department_archive(request, pk):
 def manage_department_reactivate(request, pk):
     dept = get_object_or_404(Department, pk=pk)
     if _set_active(request, dept, True, "department"):
+        audit.record(AuditLog.Kind.DEPARTMENT, "Reactivated department", dept.name)
         messages.success(request, "Department reactivated")
     return redirect(reverse("manage_departments") + "?show=archived")
 
@@ -162,7 +175,8 @@ def _form_errors(form):
 def manage_department_add(request):
     form = DepartmentForm(request.POST)
     if form.is_valid():
-        form.save()
+        dept = form.save()
+        audit.record(AuditLog.Kind.DEPARTMENT, "Added department", dept.name)
         messages.success(request, "Department added")
     else:
         messages.error(request, _form_errors(form))
@@ -173,9 +187,11 @@ def manage_department_add(request):
 @roles.role_required(roles.ADMIN)
 def manage_department_rename(request, pk):
     dept = get_object_or_404(Department, pk=pk)
+    old_name = dept.name
     form = DepartmentForm(request.POST, instance=dept)
     if form.is_valid():
         form.save()
+        audit.record(AuditLog.Kind.DEPARTMENT, "Renamed department", f"{old_name} to {dept.name}")
         messages.success(request, "Department renamed")
     else:
         messages.error(request, _form_errors(form))
@@ -192,6 +208,8 @@ def manage_assign_head(request, pk):
         return redirect("manage_departments")
     dept.program_head = form.cleaned_data["program_head"]
     dept.save(update_fields=["program_head"])
+    audit.record(AuditLog.Kind.DEPARTMENT, "Assigned Program Head",
+                 f"{dept.name}: {dept.program_head.display_name if dept.program_head else 'none'}")
     messages.success(request, "Program Head assigned" if dept.program_head else "Program Head removed")
     return redirect("manage_departments")
 
@@ -223,7 +241,8 @@ def manage_shops(request):
 def manage_shop_add(request):
     form = IdShopForm(request.POST)
     if form.is_valid():
-        form.save()
+        shop = form.save()
+        audit.record(AuditLog.Kind.BRANCH, "Added branch", shop.name)
         messages.success(request, "ID shop added")
     else:
         messages.error(request, _form_errors(form))
@@ -233,9 +252,12 @@ def manage_shop_add(request):
 @require_POST
 @roles.role_required(roles.ADMIN)
 def manage_shop_rename(request, pk):
-    form = IdShopForm(request.POST, instance=get_object_or_404(IdShop, pk=pk))
+    shop = get_object_or_404(IdShop, pk=pk)
+    old_name = shop.name
+    form = IdShopForm(request.POST, instance=shop)
     if form.is_valid():
         form.save()
+        audit.record(AuditLog.Kind.BRANCH, "Renamed branch", f"{old_name} to {shop.name}")
         messages.success(request, "ID shop renamed")
     else:
         messages.error(request, _form_errors(form))
@@ -247,6 +269,7 @@ def manage_shop_rename(request, pk):
 def manage_shop_archive(request, pk):
     shop = get_object_or_404(IdShop, pk=pk)
     if _set_active(request, shop, False, "branch"):
+        audit.record(AuditLog.Kind.BRANCH, "Archived branch", shop.name)
         messages.success(request, "ID shop archived")
         messages.info(request, f"{shop.name} moved to Archived.")
     return redirect("manage_shops")
@@ -257,5 +280,35 @@ def manage_shop_archive(request, pk):
 def manage_shop_reactivate(request, pk):
     shop = get_object_or_404(IdShop, pk=pk)
     if _set_active(request, shop, True, "branch"):
+        audit.record(AuditLog.Kind.BRANCH, "Reactivated branch", shop.name)
         messages.success(request, "ID shop reactivated")
     return redirect(reverse("manage_shops") + "?show=archived")
+
+
+@roles.role_required(roles.ADMIN)
+def manage_activity(request):
+    """FR-18: the activity log, newest first, by kind and searchable. Read-only."""
+    kind = request.GET.get("kind", "")
+    q = request.GET.get("q", "").strip()
+    entries = AuditLog.objects.select_related("actor")
+    if kind in AuditLog.Kind.values:
+        entries = entries.filter(kind=kind)
+    else:
+        kind = ""
+    if q:
+        match = (Q(summary__icontains=q) | Q(action__icontains=q) | Q(actor__username__icontains=q)
+                 | Q(actor__full_name__icontains=q))
+        if _looks_like_ip(q):
+            match |= Q(ip__startswith=q)
+        entries = entries.filter(match)
+    page = Paginator(entries, 50).get_page(request.GET.get("page"))
+    today = timezone.localdate()
+    return render(request, "requests_app/manage/activity.html", {
+        "page": page, "kind": kind, "q": q, "kinds": AuditLog.Kind.choices,
+        "count_today": AuditLog.objects.filter(created_at__date=today).count(),
+        "count_failed": AuditLog.objects.filter(created_at__date=today, action__in=["Wrong password", "Login paused"]).count(),
+    })
+
+
+def _looks_like_ip(text):
+    return all(part.isdigit() for part in text.split(".") if part) and "." in text

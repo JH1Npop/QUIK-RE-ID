@@ -106,6 +106,8 @@ class LoginForm(AuthenticationForm):
         username = self.cleaned_data.get("username") or ""
         key = self._fail_key(username)
         if username and cache.get(key, 0) >= LOGIN_MAX_FAILURES:
+            from . import audit
+            audit.record("sign_in", "Login paused", username[:150])
             raise forms.ValidationError(self.error_messages["too_many"], code="too_many")
         try:
             data = super().clean()
@@ -581,4 +583,6 @@ class ForgotPasswordForm(BootstrapMixin, PasswordResetForm):
                 cache.incr(key)
             except ValueError:
                 cache.add(key, 1, 60 * 60)
+            from . import audit
+            audit.record("sign_in", "Reset link emailed", user.username, actor=user)
             yield user

@@ -56,6 +56,7 @@ urlpatterns = [
     path("manage/departments/<int:pk>/reactivate/", admin_views.manage_department_reactivate,
          name="manage_department_reactivate"),
     path("manage/departments/<int:pk>/head/", admin_views.manage_assign_head, name="manage_assign_head"),
+    path("manage/activity/", admin_views.manage_activity, name="manage_activity"),
     path("manage/shops/", admin_views.manage_shops, name="manage_shops"),
     path("manage/shops/add/", admin_views.manage_shop_add, name="manage_shop_add"),
     path("manage/shops/<int:pk>/rename/", admin_views.manage_shop_rename, name="manage_shop_rename"),

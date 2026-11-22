@@ -602,6 +602,10 @@ body:has(.login-stage) input { user-select: text; -webkit-user-select: text; }
 .add-dept { max-width: 620px; }
 .archive-filter { padding-top: .5rem; padding-bottom: .5rem; background: #fafbfc; }
 .archive-filter .tabs a { font-size: .85rem; padding: .3rem .7rem; }
+.tabs.tabs-wrap { flex-wrap: wrap; row-gap: .35rem; }
+.activity-detail { overflow-wrap: anywhere; max-width: 520px; }
+.activity-table .chip { margin-right: .35rem; }
+.pager { justify-content: center; gap: 1rem; }
 .name-btns { display: inline-flex; gap: .25rem; white-space: nowrap; }
 .form-panel-head { padding: 1.4rem 1.75rem 1.2rem; background: var(--dll-navy); color: #fff; border-bottom: 4px solid var(--dll-yellow); }
 .form-panel-head h1 { color: #fff; font-size: 1.5rem; font-weight: 800; margin: .15rem 0 .25rem; }

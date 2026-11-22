@@ -15,7 +15,7 @@ from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
 
 from . import roles, services
-from .models import ApprovalLog, Department, IdShop, Payment, ReplacementRequest, Status, Upload, User
+from .models import ApprovalLog, AuditLog, Department, IdShop, Payment, ReplacementRequest, Status, Upload, User
 
 # Tests keep uploads in memory instead of sending them to Cloudinary.
 TEST_STORAGES = {
@@ -1189,3 +1189,56 @@ class PasswordTests(PortalTestCase):
 
     def test_login_page_links_to_forgot_password(self):
         self.assertContains(self.client.get(reverse("login")), reverse("password_reset"))
+
+
+class ActivityLogTests(PortalTestCase):
+    """FR-18: every action lands in the activity log with who, what and when."""
+
+    def entries(self, **filters):
+        return list(AuditLog.objects.filter(**filters).values_list("action", flat=True))
+
+    def test_sign_in_events_are_logged(self):
+        self.client.post(reverse("login"), {"username": self.osas.username, "password": "wrong"})
+        self.client.post(reverse("login"), {"username": self.osas.username, "password": PASSWORD})
+        self.client.post(reverse("logout"))
+        self.assertEqual(self.entries(kind="sign_in")[::-1], ["Wrong password", "Logged in", "Logged out"])
+        ok = AuditLog.objects.get(action="Logged in")
+        self.assertEqual((ok.actor, ok.ip), (self.osas, "127.0.0.1"))
+
+    def test_status_changes_and_file_views_are_logged(self):
+        req = self.make_request()
+        self.login(self.ph)
+        self.client.post(reverse("ph_reject", args=[req.pk]), {"remarks": "Unsigned letter"})
+        e = AuditLog.objects.filter(kind="request").first()
+        self.assertEqual((e.action, e.actor, e.request), ("Rejected", self.ph, req))
+        self.assertIn("Unsigned letter", e.summary)
+        self.client.get(reverse("upload_file", args=[req.uploads.first().pk]))
+        self.assertEqual(AuditLog.objects.filter(kind="file").first().actor, self.ph)
+
+    def test_admin_actions_are_logged_and_the_page_is_admin_only(self):
+        self.login(self.admin_user)
+        self.client.post(reverse("manage_deactivate", args=[self.osas.pk]))
+        self.client.post(reverse("manage_department_rename", args=[self.ba.pk]), {"name": "Business"})
+        self.client.post(reverse("manage_shop_add"), {"name": "Annex"})
+        self.assertEqual(sorted(self.entries(actor=self.admin_user, kind__in=["account", "department", "branch"])),
+                         ["Added branch", "Deactivated account", "Renamed department"])
+        self.assertIn("Business Administration to Business", AuditLog.objects.get(action="Renamed department").summary)
+        resp = self.client.get(reverse("manage_activity") + "?kind=department")
+        self.assertContains(resp, "Renamed department")
+        self.assertNotContains(resp, "Added branch")
+        self.assertContains(self.client.get(reverse("manage_activity") + "?q=Annex"), "Added branch")
+        self.login(self.ph)
+        self.assertEqual(self.client.get(reverse("manage_activity")).status_code, 403)
+
+    def test_entries_cannot_be_changed(self):
+        self.login(self.admin_user)
+        self.client.post(reverse("manage_shop_add"), {"name": "Annex"})
+        e = AuditLog.objects.get(action="Added branch")
+        e.summary = "something else"
+        with self.assertRaises(ValueError):
+            e.save()
+
+    def test_proxy_ip_uses_the_last_forwarded_address(self):
+        self.client.post(reverse("login"), {"username": self.osas.username, "password": PASSWORD},
+                         HTTP_X_FORWARDED_FOR="6.6.6.6, 203.0.113.9")
+        self.assertEqual(AuditLog.objects.get(action="Logged in").ip, "203.0.113.9")

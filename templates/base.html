@@ -46,6 +46,7 @@
             <li><a href="{% url 'manage_users' %}" class="{% if url == 'manage_users' or url == 'manage_staff_new' %}active{% endif %}">Accounts</a></li>
             <li><a href="{% url 'manage_departments' %}" class="{% if url == 'manage_departments' %}active{% endif %}">Departments</a></li>
             <li><a href="{% url 'manage_shops' %}" class="{% if url == 'manage_shops' %}active{% endif %}">ID shops</a></li>
+            <li><a href="{% url 'manage_activity' %}" class="{% if url == 'manage_activity' %}active{% endif %}">Activity</a></li>
           {% endif %}
         </ul>
         {% endwith %}

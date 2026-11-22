@@ -6,11 +6,11 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from . import roles, services
+from . import audit, roles, services
 from django.utils import timezone
 
 from .forms import BranchLocationForm, PaymentForm
-from .models import IdShop, ReplacementRequest, Status
+from .models import AuditLog, IdShop, ReplacementRequest, Status
 from .views import safe_next, show_transition_error
 
 FILTERS = {
@@ -132,6 +132,7 @@ def shop_branch(request):
         branch = form.save(commit=False)
         branch.location_updated_at = timezone.now()
         branch.save()
+        audit.record(AuditLog.Kind.BRANCH, "Updated branch location", branch.name)
         messages.success(request, "Branch location saved")
         return redirect("shop_branch")
     return render(request, "requests_app/shop/branch.html", {"form": form, "shop": shop})

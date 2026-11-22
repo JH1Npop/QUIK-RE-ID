@@ -13,9 +13,9 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.csp import csp_override
 
-from . import roles, services
+from . import audit, roles, services
 from .forms import ChangePasswordForm, ForgotPasswordForm, NewPasswordForm, SignupForm
-from .models import ApprovalLog, ReplacementRequest, Upload
+from .models import ApprovalLog, AuditLog, ReplacementRequest, Upload
 
 HOME_FOR_ROLE = {
     roles.ADMIN: "manage_users",
@@ -42,6 +42,7 @@ def signup(request):
         with transaction.atomic():
             user = form.save()
             user.groups.add(Group.objects.get(name=roles.STUDENT))
+        audit.record(AuditLog.Kind.ACCOUNT, "Signed up", f"Student account {user.username}", actor=user)
         login(request, user, backend="django.contrib.auth.backends.ModelBackend")
         messages.success(request, "Account created")
         return redirect("student_list")
@@ -61,6 +62,8 @@ def upload_file(request, pk):
             content = f.read()
     except FileNotFoundError:
         raise Http404("File not found")
+    audit.record(AuditLog.Kind.FILE, "Opened a file", f"{upload.get_kind_display()} of {upload.request.reference_no}",
+                 req=upload.request)
     content_type = mimetypes.guess_type(upload.file.name)[0] or "application/octet-stream"
     response = HttpResponse(content, content_type=content_type)
     filename = f"{upload.request.reference_no}-{upload.kind}.{upload.extension}"
@@ -123,6 +126,7 @@ def password_change(request):
     if request.method == "POST" and form.is_valid():
         user = form.save()
         update_session_auth_hash(request, user)
+        audit.record(AuditLog.Kind.SIGN_IN, "Changed password", user.username)
         messages.success(request, "Password changed")
         return redirect("home")
     return render(request, "registration/password_change.html", {"form": form})
@@ -149,5 +153,6 @@ class NewPasswordView(PasswordResetConfirmView):
 
     def form_valid(self, form):
         response = super().form_valid(form)
+        audit.record(AuditLog.Kind.SIGN_IN, "Reset password", form.user.username, actor=form.user)
         messages.success(self.request, "Password changed. Log in with your new password.")
         return response

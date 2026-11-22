@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import ApprovalLog, Department, IdShop, Payment, ReplacementRequest, Upload, User
+from .models import ApprovalLog, AuditLog, Department, IdShop, Payment, ReplacementRequest, Upload, User
 
 
 @admin.register(User)
@@ -127,4 +127,21 @@ class PaymentAdmin(admin.ModelAdmin):
     readonly_fields = ("request", "recorded_by")
 
     def has_add_permission(self, request):
+        return False
+
+
+@admin.register(AuditLog)
+class AuditLogAdmin(admin.ModelAdmin):
+    """Read-only: the activity log can't be added to, changed or deleted by hand."""
+    list_display = ("created_at", "actor", "kind", "action", "summary", "ip")
+    list_filter = ("kind",)
+    search_fields = ("summary", "action", "actor__username", "ip")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
         return False

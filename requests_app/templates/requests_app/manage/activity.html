@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Activity · Quik RE-ID{% endblock %}
+{% block content %}
+<section class="student-strip staff-strip">
+  <div class="strip-who">
+    <div class="strip-label">Admin</div>
+    <div class="strip-hello">Activity</div>
+  </div>
+  <dl class="strip-stats">
+    <div><dt>Today</dt><dd>{{ count_today }}</dd></div>
+    <div><dt>Failed logins today</dt><dd>{{ count_failed }}</dd></div>
+  </dl>
+</section>
+
+<section class="panel">
+  <div class="toolbar tabs-bar">
+    <nav class="tabs tabs-wrap" aria-label="Activity kinds">
+      <a href="?{% if q %}q={{ q|urlencode }}{% endif %}" class="{% if not kind %}active{% endif %}">All</a>
+      {% for value, label in kinds %}
+        <a href="?kind={{ value }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}" class="{% if kind == value %}active{% endif %}">{{ label }}</a>
+      {% endfor %}
+    </nav>
+  </div>
+  <div class="toolbar">
+    <form method="get" class="search" role="search" style="max-width:none">
+      {% if kind %}<input type="hidden" name="kind" value="{{ kind }}">{% endif %}
+      <input type="search" name="q" value="{{ q }}" class="form-control" placeholder="Name, username, reference no., action or IP" aria-label="Search activity">
+      <button class="btn btn-outline-primary" type="submit">Search</button>
+      {% if q %}<a href="?{% if kind %}kind={{ kind }}{% endif %}" class="btn btn-quiet nowrap">Clear</a>{% endif %}
+    </form>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table stack activity-table">
+      <thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th><th>IP address</th></tr></thead>
+      <tbody>
+      {% for e in page %}
+        <tr>
+          <td data-label="When"><div class="nowrap">{{ e.created_at|date:"M j, Y g:i:s A" }}</div></td>
+          <td data-label="Who"><div>{% if e.actor %}<span class="strong">{{ e.actor.display_name }}</span><span class="sub">{{ e.actor.username }}</span>{% else %}<span class="muted">Not logged in</span>{% endif %}</div></td>
+          <td data-label="What"><div><span class="chip">{{ e.get_kind_display }}</span> {{ e.action }}</div></td>
+          <td data-label="Details"><div class="activity-detail">{{ e.summary }}</div></td>
+          <td data-label="IP address"><div class="nowrap muted">{{ e.ip|default:"—" }}</div></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5"><div class="empty">{% if q %}Nothing matches "{{ q }}".{% else %}No activity yet.{% endif %}</div></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page.paginator.num_pages > 1 %}
+    <nav class="toolbar pager" aria-label="Pages">
+      {% if page.has_previous %}<a class="btn btn-quiet btn-sm" href="?page={{ page.previous_page_number }}{% if kind %}&amp;kind={{ kind }}{% endif %}{% if q %}&amp;q={{ q|urlencode }}{% endif %}">Newer</a>{% endif %}
+      <span class="muted small">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+      {% if page.has_next %}<a class="btn btn-quiet btn-sm" href="?page={{ page.next_page_number }}{% if kind %}&amp;kind={{ kind }}{% endif %}{% if q %}&amp;q={{ q|urlencode }}{% endif %}">Older</a>{% endif %}
+    </nav>
+  {% endif %}
+</section>
+{% endblock %}
