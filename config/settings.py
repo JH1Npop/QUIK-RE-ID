@@ -3,6 +3,7 @@ Settings for the Quik RE-ID.
 
 Every secret and environment-specific value is read from .env (see .env.example).
 """
+import sys
 from pathlib import Path
 
 import environ
@@ -87,7 +88,10 @@ if DATABASES["default"]["ENGINE"] == "django.db.backends.postgresql":
     # A small shared connection pool (psycopg_pool). Opening a TLS connection to Aiven takes most of a second,
     # so reusing one is the biggest speed-up; the pool's size cap also keeps us inside Aiven's few connection
     # slots, even under runserver's thread-per-request. Pooling replaces CONN_MAX_AGE, which must be 0.
-    if env.bool("DB_POOL", default=True):
+    # Not while running tests: the test runner holds each test in one long transaction, and a test that hits a
+    # database error (e.g. a duplicate receipt) could then get a second pooled connection that waits on the first.
+    running_tests = len(sys.argv) > 1 and sys.argv[1] == "test"
+    if env.bool("DB_POOL", default=not running_tests):
         DATABASES["default"]["CONN_MAX_AGE"] = 0
         DATABASES["default"].setdefault("OPTIONS", {})["pool"] = {
             "min_size": 1,
