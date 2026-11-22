@@ -31,6 +31,7 @@
         <div class="full">{% include "requests_app/includes/field.html" with field=form.hours %}</div>
       </div>
 
+      <p class="form-hint">Visit hours, slots and closed dates are on the <a href="{% url 'shop_calendar' %}">Calendar</a> page.</p>
       <div class="form-actions">
         <a href="{% url 'shop_list' %}" class="btn btn-quiet">Cancel</a>
         <button type="submit" class="btn btn-primary">Save location</button>

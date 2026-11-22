@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Visit calendar · Quik RE-ID{% endblock %}
+{% block content %}
+<div class="page-narrow page-wide-narrow">
+<a href="{% url 'shop_list' %}" class="back-link">&larr; ID shop</a>
+<section class="panel form-panel">
+  <div class="form-panel-head">
+    <div class="req-hero-label">Visit calendar</div>
+    <h1>{{ shop.name }}</h1>
+    <p>Students book a photo visit in these slots once OSAS approves. Booking is optional; walk-ins are still served.</p>
+  </div>
+  <div class="panel-body roomy">
+    {% if form.non_field_errors %}<div class="form-error">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+    <form method="post" id="calendar-form" data-confirm="#calendar-confirm">
+      {% csrf_token %}
+      <div class="form-section">Weekly hours</div>
+      <div class="week-hours">
+        {% for name, box, opens, closes in form.days %}
+          <div class="week-row">
+            <label class="week-day">{{ box }} <span>{{ name }}</span></label>
+            <div class="week-time">{{ opens }}{% for e in opens.errors %}<div class="error">{{ e }}</div>{% endfor %}</div>
+            <span class="week-to muted">to</span>
+            <div class="week-time">{{ closes }}{% for e in closes.errors %}<div class="error">{{ e }}</div>{% endfor %}</div>
+          </div>
+        {% endfor %}
+      </div>
+      <p class="form-hint">Tick the days you take visits. One time range a day.</p>
+
+      <div class="form-section">Slots</div>
+      <div class="form-grid form-grid-3">
+        <div>{% include "requests_app/includes/field.html" with field=form.slot_minutes %}</div>
+        <div>{% include "requests_app/includes/field.html" with field=form.slot_capacity %}</div>
+        <div>{% include "requests_app/includes/field.html" with field=form.book_days_ahead %}</div>
+      </div>
+      <div class="form-actions">
+        <a href="{% url 'shop_list' %}" class="btn btn-quiet">Cancel</a>
+        <button type="submit" class="btn btn-primary">Save calendar</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">Closed dates <span class="muted small">No visits on these days</span></div>
+  <div class="panel-body">
+    {% if closures %}
+      <ul class="closure-list">
+        {% for c in closures %}
+          <li>
+            <span><b>{{ c.date|date:"D, M j, Y" }}</b>{% if c.note %} <span class="muted">· {{ c.note }}</span>{% endif %}</span>
+            <button type="button" class="btn btn-danger-quiet btn-xs" data-bs-toggle="modal" data-bs-target="#reopen-{{ c.pk }}">Remove</button>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No closed dates coming up.</p>
+    {% endif %}
+    <form method="post" action="{% url 'shop_closure_add' %}" id="closure-form" data-confirm="#closure-confirm" class="closure-form">
+      {% csrf_token %}
+      <div>{% include "requests_app/includes/field.html" with field=closure_form.date %}</div>
+      <div>{% include "requests_app/includes/field.html" with field=closure_form.note %}</div>
+      <button type="submit" class="btn btn-outline-primary">Add closed date</button>
+    </form>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">Upcoming slots <span class="muted small">Booked out of {{ shop.slot_capacity }} per slot</span></div>
+  <div class="panel-body">
+    {% for day in preview %}
+      <details class="slot-day"{% if forloop.first %} open{% endif %}>
+        <summary class="slot-day-name">{{ day.date|date:"l, M j" }}</summary>
+        <div class="slot-grid">
+          {% for s in day.slots %}
+            <span class="slot-chip{% if not s.left %} is-full{% elif s.booked %} is-some{% endif %}">{{ s.start|date:"g:i A" }} <small>{{ s.booked }}/{{ shop.slot_capacity }}</small></span>
+          {% endfor %}
+        </div>
+      </details>
+    {% empty %}
+      <p class="muted">No slots yet. Tick at least one day above and save; students then see the times when they book.</p>
+    {% endfor %}
+  </div>
+</section>
+</div>
+
+{% include "requests_app/includes/confirm_modal.html" with id="calendar-confirm" form_id="calendar-form" title="Save the visit calendar?" body="Students see the new times right away. Visits already booked stay booked." verb="Save calendar" %}
+{% include "requests_app/includes/confirm_modal.html" with id="closure-confirm" form_id="closure-form" title="Close the branch that day?" body="Visits booked that day are cleared, and those students are emailed to pick a new time." verb="Add closed date" danger=True %}
+{% for c in closures %}
+  {% url 'shop_closure_remove' c.pk as remove_url %}
+  {% with mid=c.pk|stringformat:"d" %}
+  {% include "requests_app/includes/confirm_modal.html" with id="reopen-"|add:mid action=remove_url title="Open the branch that day?" body="Students can book visits that day again." verb="Remove" %}
+  {% endwith %}
+{% endfor %}
+{% endblock %}

@@ -40,7 +40,8 @@
           {% endif %}
           {% if is_id_shop %}
             <li><a href="{% url 'shop_list' %}" class="{% if url == 'shop_list' or url == 'shop_detail' %}active{% endif %}">ID shop</a></li>
-            {% if user.shop_id %}<li><a href="{% url 'shop_branch' %}" class="{% if url == 'shop_branch' %}active{% endif %}">My branch</a></li>{% endif %}
+            {% if user.shop_id %}<li><a href="{% url 'shop_calendar' %}" class="{% if url == 'shop_calendar' %}active{% endif %}">Calendar</a></li>
+            <li><a href="{% url 'shop_branch' %}" class="{% if url == 'shop_branch' %}active{% endif %}">My branch</a></li>{% endif %}
           {% endif %}
           {% if is_admin_role %}
             <li><a href="{% url 'manage_users' %}" class="{% if url == 'manage_users' or url == 'manage_staff_new' %}active{% endif %}">Accounts</a></li>

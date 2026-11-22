@@ -1,5 +1,5 @@
 import re
-from datetime import date
+from datetime import date, datetime, time as dt_time, timedelta
 from decimal import Decimal
 from unittest import mock
 
@@ -13,9 +13,10 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from . import roles, services
-from .models import ApprovalLog, AuditLog, Department, IdShop, Payment, ReplacementRequest, Status, Upload, User
+from .models import ApprovalLog, AuditLog, BranchHours, Department, IdShop, Payment, ReplacementRequest, Status, Upload, User
 
 # Tests keep uploads in memory instead of sending them to Cloudinary.
 TEST_STORAGES = {
@@ -1242,3 +1243,135 @@ class ActivityLogTests(PortalTestCase):
         self.client.post(reverse("login"), {"username": self.osas.username, "password": PASSWORD},
                          HTTP_X_FORWARDED_FOR="6.6.6.6, 203.0.113.9")
         self.assertEqual(AuditLog.objects.get(action="Logged in").ip, "203.0.113.9")
+
+
+class VisitCalendarTests(PortalTestCase):
+    """FR-16: students book a photo visit in the branch's slots; the branch sets the calendar."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.main = IdShop.objects.create(name="Main campus", slot_minutes=15, slot_capacity=2, book_days_ahead=2)
+        cls.annex = IdShop.objects.create(name="Annex")
+        cls.shop.shop = cls.main
+        cls.shop.save()
+        cls.shop_b = cls.make_user("shop-b", roles.ID_SHOP)
+        cls.shop_b.shop = cls.annex
+        cls.shop_b.save()
+
+    def setUp(self):
+        super().setUp()
+        # Monday Nov 23, 2026, 9:05 AM (Manila). Main campus takes visits on Mondays, 9:00 to 10:00 only.
+        self.now = timezone.make_aware(datetime(2026, 11, 23, 9, 5))
+        BranchHours.objects.create(shop=self.main, weekday=0, opens=dt_time(9), closes=dt_time(10))
+
+    def at(self, h, m):
+        return timezone.make_aware(datetime(2026, 11, 23, h, m))
+
+    def approved(self, student=None, shop=None):
+        req = self.make_request(student=student, status=Status.OSAS_APPROVED)
+        ReplacementRequest.objects.filter(pk=req.pk).update(shop=shop or self.main)
+        req.refresh_from_db()
+        return req
+
+    def test_slots_follow_the_branch_calendar(self):
+        days = services.visit_slots(self.main, self.now)
+        self.assertEqual(len(days), 1)   # Tuesday (inside the 2-day window) has no hours
+        self.assertEqual([s["start"] for s in days[0]["slots"]], [self.at(9, 15), self.at(9, 30), self.at(9, 45)])
+        services.add_closure(self.main, self.now.date(), "Holiday", self.shop)
+        self.assertEqual(services.visit_slots(self.main, self.now), [])
+        self.assertEqual(services.visit_slots(self.annex, self.now), [])   # no hours = walk-in only
+
+    def test_booking_respects_capacity_and_can_move(self):
+        a, b, c = self.approved(), self.approved(), self.approved()
+        services.book_visit(a, self.student, self.at(9, 15), now=self.now)
+        services.book_visit(b, self.student, self.at(9, 15), now=self.now)
+        with self.assertRaisesMessage(services.TransitionError, "That time is full."):
+            services.book_visit(c, self.student, self.at(9, 15), now=self.now)
+        with self.assertRaisesMessage(services.TransitionError, "open anymore"):
+            services.book_visit(c, self.student, self.at(9, 0), now=self.now)   # already started
+        services.book_visit(a, self.student, self.at(9, 30), now=self.now)     # moving frees a place at 9:15
+        services.book_visit(c, self.student, self.at(9, 15), now=self.now)
+        left = {s["start"]: s["left"] for s in services.visit_slots(self.main, self.now)[0]["slots"]}
+        self.assertEqual((left[self.at(9, 15)], left[self.at(9, 30)]), (0, 1))
+        self.assertEqual(AuditLog.objects.filter(action__in=["Booked visit", "Moved visit"]).count(), 4)
+
+    def test_only_your_own_waiting_to_pay_request_can_book(self):
+        req = self.make_request()   # still Submitted
+        ReplacementRequest.objects.filter(pk=req.pk).update(shop=self.main)
+        req.refresh_from_db()
+        with self.assertRaises(services.TransitionError):
+            services.book_visit(req, self.student, self.at(9, 15), now=self.now)
+        mine = self.approved()
+        with self.assertRaises(PermissionDenied):
+            services.book_visit(mine, self.other_student, self.at(9, 15), now=self.now)
+
+    def test_missed_visit_can_be_rebooked(self):
+        req = self.approved()
+        ReplacementRequest.objects.filter(pk=req.pk).update(visit_at=timezone.now() - timedelta(hours=2))
+        req.refresh_from_db()
+        self.assertTrue(req.visit_missed)
+        self.assertFalse(req.visit_upcoming)
+        services.book_visit(req, self.student, self.at(9, 45), now=self.now)
+        req.refresh_from_db()
+        self.assertEqual(req.visit_at, self.at(9, 45))
+
+    def test_closing_a_day_clears_its_bookings_and_emails_them(self):
+        req = self.approved()
+        services.book_visit(req, self.student, self.at(9, 15), now=self.now)
+        mail.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            cleared = services.add_closure(self.main, self.now.date(), "Holiday", self.shop)
+        self.assertEqual(cleared, 1)
+        req.refresh_from_db()
+        self.assertIsNone(req.visit_at)
+        self.assertIn("pick a new visit time", mail.outbox[-1].subject)
+
+    def test_student_books_from_their_request_page(self):
+        BranchHours.objects.filter(shop=self.main).delete()
+        BranchHours.objects.bulk_create([BranchHours(shop=self.main, weekday=d, opens=dt_time(0, 0),
+                                                     closes=dt_time(23, 45)) for d in range(7)])
+        req = self.approved()
+        self.login(self.student)
+        self.assertContains(self.client.get(reverse("student_detail", args=[req.pk])), "Your visit")
+        start = services.visit_slots(self.main, exclude=req.pk)[-1]["slots"][0]["start"]
+        resp = self.client.post(reverse("student_visit", args=[req.pk]), {"slot": timezone.localtime(start).isoformat()})
+        self.assertTrue(any(m.startswith("Visit booked:") for m in self.messages_of(resp)))
+        req.refresh_from_db()
+        self.assertEqual(req.visit_at, start)
+        self.assertContains(self.client.get(reverse("authorization", args=[req.pk])), "Visit booked")
+        self.client.post(reverse("student_visit_cancel", args=[req.pk]))
+        req.refresh_from_db()
+        self.assertIsNone(req.visit_at)
+        self.login(self.other_student)
+        resp = self.client.post(reverse("student_visit", args=[req.pk]), {"slot": start.isoformat()})
+        self.assertEqual(resp.status_code, 403)
+
+    def test_branch_staff_configure_their_own_calendar(self):
+        self.login(self.shop)
+        data = {"slot_minutes": "20", "slot_capacity": "4", "book_days_ahead": "10",
+                "open_1": "on", "opens_1": "08:00", "closes_1": "12:00",
+                "open_2": "on", "opens_2": "13:00", "closes_2": "13:10"}   # too short for one 20-minute slot
+        self.assertContains(self.client.post(reverse("shop_calendar"), data), "Wednesday closes before one slot fits.")
+        del data["open_2"]
+        resp = self.client.post(reverse("shop_calendar"), data)
+        self.assertIn("Calendar saved", self.messages_of(resp))
+        self.main.refresh_from_db()
+        self.assertEqual((self.main.slot_minutes, self.main.slot_capacity, self.main.book_days_ahead), (20, 4, 10))
+        self.assertEqual(list(self.main.hours_set.values_list("weekday", flat=True)), [1])
+        self.client.post(reverse("shop_closure_add"), {"date": "2099-12-25", "note": "Christmas"})
+        closure = self.main.closures.get()
+        self.login(self.shop_b)   # another branch can't remove it
+        self.assertEqual(self.client.post(reverse("shop_closure_remove", args=[closure.pk])).status_code, 403)
+        self.login(self.student)
+        self.assertEqual(self.client.get(reverse("shop_calendar")).status_code, 403)
+
+    def test_shop_list_shows_todays_visits(self):
+        req = self.approved()
+        ReplacementRequest.objects.filter(pk=req.pk).update(visit_at=timezone.now())
+        self.login(self.shop)
+        resp = self.client.get(reverse("shop_list"))
+        self.assertContains(resp, "visits")
+        self.assertContains(resp, req.reference_no)
+        self.login(self.shop_b)   # another branch doesn't see it
+        self.assertNotContains(self.client.get(reverse("shop_list")), req.reference_no)

@@ -9,8 +9,8 @@ from django.views.decorators.http import require_POST
 from . import audit, roles, services
 from django.utils import timezone
 
-from .forms import BranchLocationForm, PaymentForm
-from .models import AuditLog, IdShop, ReplacementRequest, Status
+from .forms import BranchLocationForm, CalendarForm, ClosureForm, PaymentForm
+from .models import AuditLog, BranchClosure, IdShop, ReplacementRequest, Status
 from .views import safe_next, show_transition_error
 
 FILTERS = {
@@ -52,8 +52,11 @@ def shop_list(request):
     reqs = reqs.order_by("-updated_at" if show in ("released", "all") else "updated_at")
     counts = dict(mine.filter(status__in=FILTERS["active"])
                   .values_list("status").annotate(n=Count("id")))
+    today = timezone.localdate()
+    visits = (mine.filter(status=Status.OSAS_APPROVED, visit_at__date=today)
+              .select_related("student", "shop").order_by("visit_at"))
     return render(request, "requests_app/shop/list.html", {
-        "requests": reqs, "q": q, "show": show, "payment_form": PaymentForm(),
+        "requests": reqs, "q": q, "show": show, "payment_form": PaymentForm(), "visits": visits,
         "shop": request.user.shop, "shops_set_up": IdShop.objects.exists(),
         "next_receipt": services.next_receipt_no(),
         "stages": [{"key": key, "label": label, "count": counts.get(status, 0)} for key, status, label in STAGES],
@@ -136,3 +139,72 @@ def shop_branch(request):
         messages.success(request, "Branch location saved")
         return redirect("shop_branch")
     return render(request, "requests_app/shop/branch.html", {"form": form, "shop": shop})
+
+
+# Visit calendar (FR-16) -------------------------------------------------------
+
+def _own_branch(request):
+    shop = request.user.shop
+    if shop is None:
+        messages.error(request, "You aren't assigned to an ID shop branch yet. Ask the Admin to choose yours.")
+    return shop
+
+
+@roles.role_required(roles.ID_SHOP)
+def shop_calendar(request):
+    """The branch's visit calendar: weekly hours, slot length, students per slot, booking window, closed dates."""
+    shop = _own_branch(request)
+    if shop is None:
+        return redirect("shop_list")
+    form = CalendarForm(request.POST or None, shop=shop)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        open_days = [name for name, box, _o, _c in form.days() if form.cleaned_data.get(box.name)]
+        audit.record(AuditLog.Kind.BRANCH, "Updated visit calendar",
+                     f"{shop.name}: {', '.join(open_days) or 'no days'}; {shop.slot_minutes} min slots, "
+                     f"{shop.slot_capacity} per slot, {shop.book_days_ahead} days ahead")
+        messages.success(request, "Calendar saved")
+        outside = services.bookings_outside_hours(shop)
+        if outside:
+            messages.warning(request, f"{outside} booked visit{'s' if outside != 1 else ''} now fall outside your "
+                                      "hours. They stay booked; serve them or ask them to pick a new time.")
+        return redirect("shop_calendar")
+    return render(request, "requests_app/shop/calendar.html", {
+        "shop": shop, "form": form, "closure_form": ClosureForm(),
+        "closures": shop.closures.filter(date__gte=timezone.localdate()),
+        "preview": services.visit_slots(shop),
+    })
+
+
+@require_POST
+@roles.role_required(roles.ID_SHOP)
+def shop_closure_add(request):
+    shop = _own_branch(request)
+    if shop is None:
+        return redirect("shop_list")
+    form = ClosureForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, " ".join(e for errs in form.errors.values() for e in errs))
+        return redirect("shop_calendar")
+    try:
+        cleared = services.add_closure(shop, form.cleaned_data["date"], form.cleaned_data["note"], request.user)
+    except services.TransitionError as e:
+        show_transition_error(request, e)
+    else:
+        messages.success(request, "Closed date added")
+        if cleared:
+            messages.info(request, f"{cleared} booked visit{'s were' if cleared != 1 else ' was'} cleared that day. "
+                                   "Those students were emailed to pick a new time.")
+    return redirect("shop_calendar")
+
+
+@require_POST
+@roles.role_required(roles.ID_SHOP)
+def shop_closure_remove(request, pk):
+    closure = get_object_or_404(BranchClosure, pk=pk)
+    if closure.shop_id != request.user.shop_id:
+        raise PermissionDenied
+    audit.record(AuditLog.Kind.BRANCH, "Removed closed date", f"{closure.shop.name}: {closure.date:%Y-%m-%d}")
+    closure.delete()
+    messages.success(request, "Closed date removed")
+    return redirect("shop_calendar")

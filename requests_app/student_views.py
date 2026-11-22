@@ -1,6 +1,9 @@
+from datetime import datetime
+
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from . import roles, services
@@ -87,7 +90,47 @@ def student_new(request):
 @roles.role_required(roles.STUDENT)
 def student_detail(request, pk):
     req = _own_request(request, pk).with_logs()
-    return render(request, "requests_app/student/detail.html", {"req": req, "logs": req.logs.all()})
+    visit_days = None
+    if req.status == Status.OSAS_APPROVED and services.branch_takes_bookings(req.shop):
+        visit_days = services.visit_slots(req.shop, exclude=req.pk)   # the picker (FR-16)
+    return render(request, "requests_app/student/detail.html", {
+        "req": req, "logs": req.logs.all(), "visit_days": visit_days,
+        "visit_label": services.visit_label(req.visit_at, req.visit_end) if req.visit_at else "",
+    })
+
+
+@require_POST
+@roles.role_required(roles.STUDENT)
+def student_visit(request, pk):
+    """Book or move the photo visit at the student's branch."""
+    req = _own_request(request, pk)
+    try:
+        start = datetime.fromisoformat(request.POST.get("slot", ""))   # the picker sends e.g. 2026-11-25T09:00:00+08:00
+        if timezone.is_naive(start):
+            start = timezone.make_aware(start)
+    except ValueError:
+        messages.error(request, "Pick a time first.")
+        return redirect("student_detail", pk=req.pk)
+    try:
+        req = services.book_visit(req, request.user, start)
+    except services.TransitionError as e:
+        show_transition_error(request, e)
+    else:
+        messages.success(request, f"Visit booked: {services.visit_label(req.visit_at, req.visit_end)}")
+    return redirect("student_detail", pk=req.pk)
+
+
+@require_POST
+@roles.role_required(roles.STUDENT)
+def student_visit_cancel(request, pk):
+    req = _own_request(request, pk)
+    try:
+        services.cancel_visit(req, request.user)
+    except services.TransitionError as e:
+        show_transition_error(request, e)
+    else:
+        messages.success(request, "Visit cancelled. You can book again or walk in during open hours.")
+    return redirect("student_detail", pk=req.pk)
 
 
 @roles.role_required(roles.STUDENT)

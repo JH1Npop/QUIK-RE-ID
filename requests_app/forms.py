@@ -17,7 +17,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 
 from . import roles
-from .models import LRN_RE, Department, IdShop, Payment, Upload, User
+from .models import LRN_RE, BranchHours, Department, IdShop, Payment, Upload, User
 
 UPLOAD_ERROR = "Couldn't upload the file. Use PDF, JPG or PNG under 5 MB."
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
@@ -586,3 +586,79 @@ class ForgotPasswordForm(BootstrapMixin, PasswordResetForm):
             from . import audit
             audit.record("sign_in", "Reset link emailed", user.username, actor=user)
             yield user
+
+
+# ---------------------------------------------------------------- visit calendar (FR-16)
+
+WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+SLOT_LENGTHS = [(10, "10 minutes"), (15, "15 minutes"), (20, "20 minutes"), (30, "30 minutes"), (45, "45 minutes"),
+                (60, "1 hour")]
+
+
+class CalendarForm(BootstrapMixin, forms.Form):
+    """A branch's visit calendar: weekly hours (one range a day), slot length, students per slot, booking window."""
+    slot_minutes = forms.TypedChoiceField(label="Minutes per slot", choices=SLOT_LENGTHS, coerce=int)
+    slot_capacity = forms.IntegerField(label="Students per slot", min_value=1, max_value=50)
+    book_days_ahead = forms.IntegerField(label="Days students can book ahead", min_value=1, max_value=60,
+                                         help_text="Today counts as the first day.")
+
+    def __init__(self, *args, shop, **kwargs):
+        hours = {h.weekday: h for h in shop.hours_set.all()}
+        initial = {"slot_minutes": shop.slot_minutes, "slot_capacity": shop.slot_capacity,
+                   "book_days_ahead": shop.book_days_ahead}
+        for i in range(7):
+            h = hours.get(i)
+            initial[f"open_{i}"] = h is not None
+            initial[f"opens_{i}"] = h.opens if h else None
+            initial[f"closes_{i}"] = h.closes if h else None
+        super().__init__(*args, initial=initial, **kwargs)
+        self.shop = shop
+        for i, name in enumerate(WEEKDAYS):
+            self.fields[f"open_{i}"] = forms.BooleanField(label=name, required=False)
+            self.fields[f"opens_{i}"] = forms.TimeField(label=f"{name} opens", required=False,
+                                                        widget=forms.TimeInput(attrs={"type": "time", "class": "form-control"}))
+            self.fields[f"closes_{i}"] = forms.TimeField(label=f"{name} closes", required=False,
+                                                         widget=forms.TimeInput(attrs={"type": "time", "class": "form-control"}))
+            self.fields[f"open_{i}"].widget.attrs["class"] = "form-check-input"
+
+    def days(self):
+        """One row per weekday for the template: (name, open box, opens field, closes field)."""
+        return [(name, self[f"open_{i}"], self[f"opens_{i}"], self[f"closes_{i}"]) for i, name in enumerate(WEEKDAYS)]
+
+    def clean(self):
+        data = super().clean()
+        minutes = data.get("slot_minutes") or 15
+        for i, name in enumerate(WEEKDAYS):
+            if not data.get(f"open_{i}"):
+                continue
+            opens, closes = data.get(f"opens_{i}"), data.get(f"closes_{i}")
+            if not opens or not closes:
+                self.add_error(f"opens_{i}", f"Set when {name} opens and closes, or untick it.")
+            elif (closes.hour * 60 + closes.minute) - (opens.hour * 60 + opens.minute) < minutes:
+                self.add_error(f"closes_{i}", f"{name} closes before one slot fits.")
+        return data
+
+    def save(self):
+        shop = self.shop
+        shop.slot_minutes = self.cleaned_data["slot_minutes"]
+        shop.slot_capacity = self.cleaned_data["slot_capacity"]
+        shop.book_days_ahead = self.cleaned_data["book_days_ahead"]
+        shop.save(update_fields=["slot_minutes", "slot_capacity", "book_days_ahead"])
+        BranchHours.objects.filter(shop=shop).delete()
+        BranchHours.objects.bulk_create([
+            BranchHours(shop=shop, weekday=i, opens=self.cleaned_data[f"opens_{i}"], closes=self.cleaned_data[f"closes_{i}"])
+            for i in range(7) if self.cleaned_data.get(f"open_{i}")
+        ])
+        return shop
+
+
+class ClosureForm(BootstrapMixin, forms.Form):
+    date = forms.DateField(label="Closed on", widget=forms.DateInput(attrs={"type": "date"}))
+    note = forms.CharField(label="Note", max_length=120, required=False,
+                           widget=forms.TextInput(attrs={"placeholder": "e.g. Holiday"}))
+
+    def clean_date(self):
+        day = self.cleaned_data["date"]
+        if day < timezone.localdate():
+            raise forms.ValidationError("Pick today or a later date.")
+        return day

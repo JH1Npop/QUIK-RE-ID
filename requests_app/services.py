@@ -4,6 +4,7 @@ Every change runs in one database transaction that also writes an ApprovalLog
 row, and the student is emailed after the transaction commits.
 """
 import logging
+from datetime import datetime, time, timedelta
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -13,10 +14,10 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.db.models.functions import Length
 from django.urls import reverse
-from django.utils import timezone
+from django.utils import dateformat, timezone
 
-from . import roles
-from .models import ApprovalLog, IdShop, Payment, ReplacementRequest, Status, Upload
+from . import audit, roles
+from .models import ApprovalLog, AuditLog, BranchClosure, IdShop, Payment, ReplacementRequest, Status, Upload
 
 logger = logging.getLogger(__name__)
 
@@ -260,3 +261,160 @@ def notify_student(req, remarks):
         )
     except Exception:
         logger.exception("Couldn't email %s about %s", student.email, req.reference_no)
+
+
+# Visit calendar (FR-16) -------------------------------------------------------
+# Students book a photo visit at their branch once OSAS approves, until the fee is paid. Booking is optional
+# (walk-ins are still served) and isn't a status change, so it doesn't go through change_status.
+
+def _at(day, clock):
+    return timezone.make_aware(datetime.combine(day, clock))
+
+
+def visit_label(start, end=None):
+    """'Tue, Nov 25, 9:00 AM' (+ ' to 9:15 AM'), in local time."""
+    text = dateformat.format(timezone.localtime(start), "D, M j, g:i A")
+    if end:
+        text += " to " + dateformat.format(timezone.localtime(end), "g:i A")
+    return text
+
+
+def branch_takes_bookings(shop):
+    return shop is not None and shop.hours_set.exists()
+
+
+def visit_slots(shop, now=None, exclude=None):
+    """The branch's bookable slots, by day: [{"date", "slots": [{"start", "end", "booked", "left"}]}].
+
+    From today for `book_days_ahead` days (today counts), skipping closed dates, days without hours and slots
+    that already started. A slot's load = waiting-to-pay requests booked inside [start, end), so changing the
+    slot length later can't hide older bookings. `exclude` = a request whose own booking doesn't count."""
+    now = now or timezone.now()
+    hours = {h.weekday: h for h in shop.hours_set.all()}
+    if not hours:
+        return []
+    today = timezone.localtime(now).date()
+    last = today + timedelta(days=shop.book_days_ahead - 1)
+    closed = set(shop.closures.filter(date__gte=today, date__lte=last).values_list("date", flat=True))
+    step = timedelta(minutes=shop.slot_minutes)
+    booked = ReplacementRequest.objects.filter(
+        shop=shop, status=Status.OSAS_APPROVED, visit_at__gte=_at(today, time.min),
+        visit_at__lt=_at(last + timedelta(days=1), time.min),
+    )
+    if exclude:
+        booked = booked.exclude(pk=exclude)
+    booked = list(booked.values_list("visit_at", flat=True))
+    days, day = [], today
+    while day <= last:
+        h = hours.get(day.weekday())
+        if h and day not in closed:
+            slots, start, end_of_day = [], _at(day, h.opens), _at(day, h.closes)
+            while start + step <= end_of_day:
+                if start > now:
+                    n = sum(1 for b in booked if start <= b < start + step)
+                    slots.append({"start": start, "end": start + step, "booked": n,
+                                  "left": max(0, shop.slot_capacity - n)})
+                start += step
+            if slots:
+                days.append({"date": day, "slots": slots})
+        day += timedelta(days=1)
+    return days
+
+
+def _email_student(req, subject, lines):
+    student = req.student
+    if not student.email:
+        return
+    site_url = getattr(settings, "SITE_URL", "")
+    if site_url:
+        lines = lines + ["", f"View your request: {site_url.rstrip('/')}{reverse('student_detail', args=[req.pk])}"]
+    body = "\n".join([f"Hello {student.full_name or student.username},", ""] + lines + ["", "Quik RE-ID"])
+
+    def send():
+        try:
+            send_mail(subject, body, None, [student.email])
+        except Exception:
+            logger.exception("Couldn't email %s about %s", student.email, req.reference_no)
+    transaction.on_commit(send)
+
+
+def book_visit(req, student, start, now=None):
+    """Book (or move) the student's visit to the slot starting at `start`. One booking at a time per branch."""
+    now = now or timezone.now()
+    with transaction.atomic():
+        locked = ReplacementRequest.objects.select_for_update().get(pk=req.pk)
+        if locked.student_id != student.pk:
+            raise PermissionDenied
+        if locked.status != Status.OSAS_APPROVED or not locked.shop_id:
+            raise TransitionError("You can book a visit after OSAS approves, until the fee is paid.")
+        shop = IdShop.objects.select_for_update().get(pk=locked.shop_id)   # serialises bookings at this branch
+        slot = next((s for d in visit_slots(shop, now, exclude=locked.pk) for s in d["slots"] if s["start"] == start), None)
+        if slot is None:
+            raise TransitionError("That time isn't open anymore. Pick another one.")
+        if slot["left"] < 1:
+            raise TransitionError("That time is full. Pick another one.")
+        moved = locked.visit_at is not None
+        locked.visit_at = start
+        locked.save(update_fields=["visit_at"])
+        label = visit_label(slot["start"], slot["end"])
+        audit.record(AuditLog.Kind.REQUEST, "Moved visit" if moved else "Booked visit",
+                     f"{locked.reference_no}: {label}", actor=student, req=locked)
+        _email_student(locked, f"{locked.reference_no}: visit booked", [
+            f"Your ID shop visit is booked: {label}, at {shop.name}" + (f", {shop.address}." if shop.address else "."),
+            "Bring your authorization slip and the replacement fee. You can change the time on your request page "
+            "until you pay.",
+        ])
+    return locked
+
+
+def cancel_visit(req, student):
+    with transaction.atomic():
+        locked = ReplacementRequest.objects.select_for_update().get(pk=req.pk)
+        if locked.student_id != student.pk:
+            raise PermissionDenied
+        if not locked.visit_at or locked.status != Status.OSAS_APPROVED:
+            raise TransitionError("There's no booked visit to cancel.")
+        label = visit_label(locked.visit_at)
+        locked.visit_at = None
+        locked.save(update_fields=["visit_at"])
+        audit.record(AuditLog.Kind.REQUEST, "Cancelled visit", f"{locked.reference_no}: {label}", actor=student, req=locked)
+    return locked
+
+
+def add_closure(shop, day, note, actor):
+    """Close the branch for a day. That day's bookings are cleared and those students are emailed to rebook."""
+    with transaction.atomic():
+        if BranchClosure.objects.filter(shop=shop, date=day).exists():
+            raise TransitionError("That date is already closed.")
+        BranchClosure.objects.create(shop=shop, date=day, note=note)
+        affected = list(ReplacementRequest.objects.select_for_update().filter(
+            shop=shop, status=Status.OSAS_APPROVED,
+            visit_at__gte=_at(day, time.min), visit_at__lt=_at(day + timedelta(days=1), time.min)))
+        for req in affected:
+            label = visit_label(req.visit_at)
+            req.visit_at = None
+            req.save(update_fields=["visit_at"])
+            _email_student(req, f"{req.reference_no}: pick a new visit time", [
+                f"{shop.name} is closed on {dateformat.format(day, 'D, M j')}" + (f" ({note})" if note else "")
+                + f", so your visit ({label}) was cancelled.",
+                "Pick a new time on your request page, or walk in during open hours.",
+            ])
+        audit.record(AuditLog.Kind.BRANCH, "Added closed date",
+                     f"{shop.name}: {day:%Y-%m-%d}" + (f" ({note})" if note else "")
+                     + (f"; {len(affected)} booking(s) cleared" if affected else ""), actor=actor)
+    return len(affected)
+
+
+def bookings_outside_hours(shop, now=None):
+    """Upcoming bookings that no longer fit the branch's weekly hours (after staff change them)."""
+    now = now or timezone.now()
+    hours = {h.weekday: h for h in shop.hours_set.all()}
+    count = 0
+    for at in ReplacementRequest.objects.filter(shop=shop, status=Status.OSAS_APPROVED, visit_at__gt=now) \
+            .values_list("visit_at", flat=True):
+        local = timezone.localtime(at)
+        h = hours.get(local.weekday())
+        if h is None or not (h.opens <= local.time() and local + timedelta(minutes=shop.slot_minutes)
+                             <= _at(local.date(), h.closes)):
+            count += 1
+    return count

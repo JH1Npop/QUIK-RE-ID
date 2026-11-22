@@ -1,0 +1,48 @@
+{# The student's photo visit at their ID shop branch (FR-16): booked, missed, or a picker. Needs req, visit_days, visit_label. #}
+<div class="visit-box" id="visit">
+  <div class="visit-head">
+    <div>
+      <div class="sheet-title">Your visit</div>
+      {% if req.visit_upcoming %}
+        <div class="visit-booked">Booked: <b>{{ visit_label }}</b> at {{ req.shop.name }}</div>
+      {% elif req.visit_missed %}
+        <div class="visit-missed">You missed your visit ({{ visit_label }}). Pick a new time, or walk in during open hours.</div>
+      {% else %}
+        <p class="muted visit-intro">Optional: book a time for your photo at {{ req.shop.name }} so you don't wait. You can also walk in during open hours.</p>
+      {% endif %}
+    </div>
+    {% if req.visit_upcoming %}
+      <button type="button" class="btn btn-quiet btn-sm" data-bs-toggle="modal" data-bs-target="#visit-cancel">Cancel visit</button>
+    {% endif %}
+  </div>
+
+  {% if visit_days %}
+    {% if req.visit_upcoming %}<details class="visit-change"><summary>Change the time</summary>{% endif %}
+    <form method="post" action="{% url 'student_visit' req.pk %}" id="visit-form" data-confirm="#visit-confirm">
+      {% csrf_token %}
+      {% for day in visit_days %}
+        <details class="slot-day"{% if forloop.first %} open{% endif %}>
+          <summary class="slot-day-name">{{ day.date|date:"l, M j" }}</summary>
+          <div class="slot-grid">
+            {% for s in day.slots %}
+              <label class="slot-pill{% if not s.left %} is-full{% endif %}">
+                <input type="radio" name="slot" value="{{ s.start|date:'c' }}" required{% if not s.left %} disabled{% endif %}>
+                <span>{{ s.start|date:"g:i A" }}</span>
+                <small>{% if s.left %}{{ s.left }} left{% else %}Full{% endif %}</small>
+              </label>
+            {% endfor %}
+          </div>
+        </details>
+      {% endfor %}
+      <button type="submit" class="btn btn-primary visit-submit">{% if req.visit_at %}Move my visit{% else %}Book this time{% endif %}</button>
+    </form>
+    {% if req.visit_upcoming %}</details>{% endif %}
+  {% else %}
+    <p class="muted visit-intro">No open times in the next {{ req.shop.book_days_ahead }} day{{ req.shop.book_days_ahead|pluralize }}. Walk in during open hours, or check again later.</p>
+  {% endif %}
+</div>
+{% include "requests_app/includes/confirm_modal.html" with id="visit-confirm" form_id="visit-form" title="Book this visit time?" body="The ID shop expects you then. You can change it until you pay." verb="Book visit" %}
+{% if req.visit_upcoming %}
+  {% url 'student_visit_cancel' req.pk as cancel_visit_url %}
+  {% include "requests_app/includes/confirm_modal.html" with id="visit-cancel" action=cancel_visit_url title="Cancel your visit?" body="Your time frees up for someone else. You can book again or walk in." verb="Cancel visit" danger=True dismiss="Keep visit" %}
+{% endif %}

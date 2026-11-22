@@ -44,6 +44,7 @@
         <div><span class="strong">OSAS approved it.</span> Show your authorization at {% if req.shop %}<b>{{ req.shop.name }}</b>{% else %}the ID shop{% endif %} and pay the replacement fee there.</div>
         <a href="{% url 'authorization' req.pk %}" class="btn btn-primary">Show authorization</a>
       </div>
+      {% if visit_days is not None %}{% include "requests_app/student/visit.html" %}{% endif %}
     {% elif req.status == "PRINTED" %}
       <div class="callout callout-success" style="margin:1.75rem 0 0">
         <div><span class="strong">Your new ID is ready.</span> Claim it at {% if req.shop %}<b>{{ req.shop.name }}</b>{% else %}the ID shop{% endif %}. Bring your reference no. <b>{{ req.reference_no }}</b>.</div>

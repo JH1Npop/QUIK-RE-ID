@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 import uuid
 from urllib.parse import quote_plus
 from decimal import Decimal
@@ -90,6 +91,13 @@ class IdShop(models.Model):
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True,
                                     validators=[MinValueValidator(Decimal("-180")), MaxValueValidator(Decimal("180"))])
     location_updated_at = models.DateTimeField(null=True, blank=True, editable=False)
+    # Visit calendar (FR-16): students book a photo visit in these slots. No weekly hours = walk-in only.
+    slot_minutes = models.PositiveSmallIntegerField("Minutes per slot", default=15,
+                                                    validators=[MinValueValidator(5), MaxValueValidator(240)])
+    slot_capacity = models.PositiveSmallIntegerField("Students per slot", default=3,
+                                                     validators=[MinValueValidator(1), MaxValueValidator(50)])
+    book_days_ahead = models.PositiveSmallIntegerField("Days students can book ahead", default=7,
+                                                       validators=[MinValueValidator(1), MaxValueValidator(60)])
 
     class Meta:
         ordering = ["name"]
@@ -185,6 +193,8 @@ class ReplacementRequest(models.Model):
     # The ID shop branch the student chose. Only that branch sees and handles the request.
     # Empty for requests filed before branches existed (every branch can handle those).
     shop = models.ForeignKey(IdShop, null=True, blank=True, on_delete=models.PROTECT, related_name="requests")
+    # The photo visit the student booked at their branch (FR-16): optional, changeable until the fee is paid.
+    visit_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -245,6 +255,22 @@ class ReplacementRequest(models.Model):
     @property
     def is_open(self):
         return self.status not in (Status.RELEASED, Status.CANCELLED)
+
+    # Visit booking (FR-16): only matters while the request waits for the fee (OSAS approved).
+    @property
+    def visit_end(self):
+        if not (self.visit_at and self.shop_id):
+            return None
+        return self.visit_at + timedelta(minutes=self.shop.slot_minutes)
+
+    @property
+    def visit_missed(self):
+        """Booked, the slot is over, and the student hasn't paid: they can pick a new time."""
+        return bool(self.visit_at) and self.status == Status.OSAS_APPROVED and self.visit_end <= timezone.now()
+
+    @property
+    def visit_upcoming(self):
+        return bool(self.visit_at) and self.status == Status.OSAS_APPROVED and not self.visit_missed
 
     def latest_uploads(self):
         """The newest upload of each kind."""
@@ -400,3 +426,26 @@ class AuditLog(models.Model):
         if self.pk is not None:
             raise ValueError("Activity log entries can't be changed.")
         super().save(*args, **kwargs)
+
+
+class BranchHours(models.Model):
+    """When a branch takes photo visits on one weekday (0 = Monday). One time range per day."""
+    shop = models.ForeignKey(IdShop, on_delete=models.CASCADE, related_name="hours_set")
+    weekday = models.PositiveSmallIntegerField(validators=[MaxValueValidator(6)])
+    opens = models.TimeField()
+    closes = models.TimeField()
+
+    class Meta:
+        ordering = ["weekday"]
+        constraints = [models.UniqueConstraint(fields=["shop", "weekday"], name="one_range_per_weekday")]
+
+
+class BranchClosure(models.Model):
+    """A date the branch is closed (a holiday): no visit slots that day."""
+    shop = models.ForeignKey(IdShop, on_delete=models.CASCADE, related_name="closures")
+    date = models.DateField()
+    note = models.CharField(max_length=120, blank=True)
+
+    class Meta:
+        ordering = ["date"]
+        constraints = [models.UniqueConstraint(fields=["shop", "date"], name="one_closure_per_date")]

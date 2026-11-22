@@ -20,6 +20,8 @@ urlpatterns = [
     path("my/requests/<int:pk>/", student_views.student_detail, name="student_detail"),
     path("my/requests/<int:pk>/resubmit/", student_views.student_resubmit, name="student_resubmit"),
     path("my/requests/<int:pk>/cancel/", student_views.student_cancel, name="student_cancel"),
+    path("my/requests/<int:pk>/visit/", student_views.student_visit, name="student_visit"),
+    path("my/requests/<int:pk>/visit/cancel/", student_views.student_visit_cancel, name="student_visit_cancel"),
 
     # Program Head
     path("review/", review_views.ph_queue, name="ph_queue"),
@@ -37,6 +39,9 @@ urlpatterns = [
     # ID shop
     path("shop/", shop_views.shop_list, name="shop_list"),
     path("shop/branch/", shop_views.shop_branch, name="shop_branch"),
+    path("shop/calendar/", shop_views.shop_calendar, name="shop_calendar"),
+    path("shop/calendar/closed/", shop_views.shop_closure_add, name="shop_closure_add"),
+    path("shop/calendar/closed/<int:pk>/remove/", shop_views.shop_closure_remove, name="shop_closure_remove"),
     path("shop/<int:pk>/", shop_views.shop_detail, name="shop_detail"),
     path("shop/<int:pk>/payment/", shop_views.shop_payment, name="shop_payment"),
     path("shop/<int:pk>/photo/", shop_views.shop_photo, name="shop_photo"),
